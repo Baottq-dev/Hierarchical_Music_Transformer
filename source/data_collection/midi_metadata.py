@@ -2,6 +2,10 @@ import os
 import json
 
 def list_midi_files_and_metadata(base_dir):
+    """
+    Scans a directory for MIDI files and extracts metadata.
+    Returns a list of dictionaries containing file paths and metadata.
+    """
     midi_metadata_list = []
     for root, dirs, files in os.walk(base_dir):
         for file in files:
@@ -23,11 +27,8 @@ def list_midi_files_and_metadata(base_dir):
                 })
     return midi_metadata_list
 
-if __name__ == "__main__":
-    INPUT_MIDI_DIR = "./data/midi"
-    OUTPUT_METADATA_FILE = "./data/output/midi_metadata_list.json"
-    metadata = list_midi_files_and_metadata(INPUT_MIDI_DIR)
-    with open(OUTPUT_METADATA_FILE, "w") as f:
-        json.dump(metadata, f, indent=4)
-    print(f"Found {len(metadata)} MIDI files. Metadata saved to {OUTPUT_METADATA_FILE}")
-
+def save_metadata(metadata_list, output_file):
+    """Saves metadata to a JSON file."""
+    with open(output_file, "w") as f:
+        json.dump(metadata_list, f, indent=4)
+    print(f"Found {len(metadata_list)} MIDI files. Metadata saved to {output_file}") 

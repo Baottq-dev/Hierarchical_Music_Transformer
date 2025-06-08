@@ -1,105 +1,199 @@
-## AMT: Automatic Music Tokenization & Generation
+# AMT (Audio Music Transformer)
 
-### Mục tiêu dự án
-Dự án xây dựng pipeline tự động từ dữ liệu MIDI và mô tả văn bản, qua các bước:
-1. Thu thập metadata và mô tả từ Wikipedia cho file MIDI.
-2. Sinh embedding văn bản, phân cụm thành các semantic token.
-3. Chuyển đổi MIDI thành chuỗi sự kiện (event sequence).
-4. Chuẩn bị dữ liệu huấn luyện cho mô hình sinh nhạc (fine-tune GPT-2).
-5. Sinh nhạc mới dựa trên semantic token.
+AMT là một dự án nghiên cứu về việc tạo nhạc từ mô tả văn bản, dựa trên kiến trúc Transformer. Dự án này kết hợp xử lý ngôn ngữ tự nhiên và âm nhạc để tạo ra các bản nhạc dựa trên mô tả văn bản.
 
----
+## 🎵 Tính năng chính
 
-### Cấu trúc thư mục
+- **Tạo nhạc từ văn bản**: Chuyển đổi mô tả văn bản thành bản nhạc MIDI
+- **Xử lý đa track**: Hỗ trợ nhiều nhạc cụ và track MIDI
+- **Phân tích cảm xúc**: Phân tích cảm xúc từ mô tả văn bản
+- **Tạo nhạc theo phong cách**: Tạo nhạc dựa trên phong cách âm nhạc
+- **Đánh giá chất lượng**: Các metrics đánh giá chất lượng bản nhạc
+
+## 🛠 Công nghệ sử dụng
+
+### Core Technologies
+- Python 3.8+
+- PyTorch
+- Transformers (BERT, GPT-2)
+- Mido (MIDI processing)
+- NumPy
+- NLTK & spaCy
+- scikit-learn
+
+### Các thư viện chuyên biệt
+- torchaudio
+- pandas
+- matplotlib
+- tqdm
+- pytest
+
+## 📦 Cài đặt
+
+1. Clone repository:
+```bash
+git clone https://github.com/yourusername/AMT.git
+cd AMT
+```
+
+2. Tạo môi trường ảo:
+```bash
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+venv\Scripts\activate     # Windows
+```
+
+3. Cài đặt dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+## 🚀 Sử dụng
+
+### 1. Chuẩn bị dữ liệu
+```python
+from source.data_processing.midi_processor import process_midi_files
+from source.data_processing.text_processor import process_text_descriptions
+
+# Xử lý MIDI files
+midi_data = process_midi_files("path/to/midi/files")
+
+# Xử lý mô tả văn bản
+text_data = process_text_descriptions("path/to/text/descriptions")
+```
+
+### 2. Training model
+```python
+from source.model.training import train_model
+
+# Training model
+model = train_model(
+    midi_data=midi_data,
+    text_data=text_data,
+    epochs=100,
+    batch_size=32
+)
+```
+
+### 3. Tạo nhạc
+```python
+from source.model.generation import MusicGenerator
+
+# Khởi tạo generator
+generator = MusicGenerator(model_path="path/to/model")
+
+# Tạo nhạc từ văn bản
+midi_file = generator.generate_from_text(
+    "A happy and upbeat piano melody with a jazz influence"
+)
+```
+
+## 📊 Pipeline
+
+### Data Processing Pipeline
+```mermaid
+graph TD
+    A[MIDI Files] --> B[MIDI Processing]
+    C[Text Descriptions] --> D[Text Processing]
+    B --> E[Event Sequences]
+    D --> F[Text Embeddings]
+    E --> G[Training Data]
+    F --> G
+    G --> H[Model Training]
+```
+
+### Generation Pipeline
+```mermaid
+graph TD
+    A[Input Text] --> B[Text Embedding]
+    B --> C[Clustering]
+    C --> D[Style Selection]
+    D --> E[Music Generation]
+    E --> F[MIDI Output]
+```
+
+## 📁 Cấu trúc dự án
+
 ```
 source/
-  automate_wikipedia_pairing.py      # Ghép metadata MIDI với mô tả Wikipedia
-  collect_text_data_conceptual.py    # Kịch bản ý tưởng thu thập mô tả văn bản
-  cluster_text_embeddings.py         # Phân cụm embedding văn bản thành semantic token
-  extract_midi_metadata.py           # Quét thư mục MIDI, sinh metadata
-  extract_text_features.py           # Sinh embedding từ mô tả văn bản (BERT)
-  fine_tune_amt.py                   # Huấn luyện/fine-tune mô hình sinh nhạc
-  generate_music.py                  # Sinh nhạc mới từ semantic token
-  prepare_amt_training_data.py       # Chuẩn bị dữ liệu huấn luyện từ MIDI & semantic token
-  preprocess_midi.py                 # Chuyển MIDI thành event sequence
-  verify_env.py                      # Kiểm tra môi trường/thư viện
-data/
-  output/
-    midi_metadata_list.json          # Metadata các file MIDI
-    automated_paired_data_1000.json  # Dữ liệu ghép tự động (MIDI + mô tả)
-    midi_metadata_list.json          # Metadata chi tiết các file MIDI
-    ... (các file output khác)
-.vscode/
-  settings.json                      # Cấu hình VSCode
-requirement.txt                      # Thư viện phụ thuộc
-README.md                            # Tài liệu này
+├── data_processing/
+│   ├── midi_processor.py    # MIDI processing
+│   └── text_processor.py    # Text processing
+├── model/
+│   ├── clustering.py        # Text embedding clustering
+│   ├── generation.py        # Music generation
+│   └── training.py          # Model training
+├── evaluation/
+│   └── metrics.py           # Evaluation metrics
+└── utils/
+    └── data_preparation.py  # Training data preparation
 ```
 
----
+## 🎯 Cải tiến từ bài báo gốc
 
-### Hướng dẫn cài đặt
+### Text Processing
+- Phân tích cảm xúc nâng cao
+- Trích xuất từ khóa âm nhạc
+- Phân loại thể loại nhạc
+- Tạo embedding đa chiều
 
-1. **Cài đặt thư viện phụ thuộc:**
-   ```
-   pip install -r requirement.txt
-   ```
-   Các thư viện chính: `torch`, `transformers`, `mido`, `numpy`, `scikit-learn`, `wikipedia`, `matplotlib`.
+### MIDI Processing
+- Hỗ trợ đa track
+- Phân tích metadata chi tiết
+- Theo dõi control changes
+- Hỗ trợ nhiều nhạc cụ
 
-2. **Kiểm tra môi trường:**
-   ```
-   python source/verify_env.py
-   ```
+### Model Architecture
+- Gradient clipping
+- Learning rate scheduling
+- Mixed precision training
+- Model checkpointing
 
----
+### Evaluation Metrics
+- Note density similarity
+- Velocity similarity
+- Note range similarity
+- Time signature matching
+- Tempo matching
 
-### Pipeline sử dụng
+## 📈 Performance
 
-1. **Trích xuất metadata từ thư mục MIDI:**
-   ```
-   python source/extract_midi_metadata.py
-   ```
-   - Sinh file `data/output/midi_metadata_list.json`.
+### Training
+- Giảm sử dụng bộ nhớ thông qua mixed precision
+- Hội tụ nhanh hơn với learning rate scheduling
+- Tổng quát hóa tốt hơn với gradient clipping
+- Ổn định hơn với model checkpointing
 
-2. **Ghép metadata với mô tả Wikipedia:**
-   ```
-   python source/automate_wikipedia_pairing.py
-   ```
-   - Sinh file `data/output/automated_paired_data.json`.
+### Generation
+- Matching phong cách chính xác hơn
+- Xử lý tốt hơn với nhiều nhạc cụ
+- Cải thiện tính nhất quán về tempo và time signature
+- Kiểm soát tốt hơn các tham số generation
 
-3. **Sinh embedding từ mô tả văn bản:**
-   ```
-   python source/extract_text_features.py
-   ```
-   - Sinh file `data/output/text_embeddings.json`.
+## 🔮 Phát triển trong tương lai
 
-4. **Phân cụm embedding thành semantic token:**
-   ```
-   python source/cluster_text_embeddings.py
-   ```
-   - Sinh file `data/output/clustered_text_data.json`.
+### Planned Enhancements
+- Hỗ trợ generation real-time
+- Chuyển đổi phong cách phức tạp hơn
+- Xử lý đa nhạc cụ tốt hơn
+- Metrics đánh giá nâng cao
 
-5. **Chuẩn bị dữ liệu huấn luyện cho mô hình sinh nhạc:**
-   ```
-   python source/prepare_amt_training_data.py
-   ```
-   - Sinh file `data/output/amt_training_data.json`.
+### Research Directions
+- Cải thiện cross-modal learning
+- Biểu diễn phong cách tốt hơn
+- Phương pháp training hiệu quả hơn
+- Nâng cao chất lượng generation
 
-6. **Fine-tune mô hình sinh nhạc (GPT-2):**
-   ```
-   python source/fine_tune_amt.py
-   ```
-   - Lưu mô hình vào `data/output/amt_model_fine_tuned/`.
+## 🤝 Đóng góp
 
-7. **Sinh nhạc mới từ semantic token:**
-   ```
-   python source/generate_music.py
-   ```
-   - Kết quả MIDI sinh ra trong `data/output/generated_music/`.
+Chúng tôi rất hoan nghênh mọi đóng góp! Vui lòng đọc [CONTRIBUTING.md](CONTRIBUTING.md) để biết thêm chi tiết về quy trình đóng góp.
 
----
+## 📝 License
 
-### Ghi chú
+Dự án này được cấp phép theo MIT License - xem file [LICENSE](LICENSE) để biết thêm chi tiết.
 
-- Các script có thể cần điều chỉnh đường dẫn dữ liệu cho phù hợp với hệ thống của bạn.
-- Một số script chỉ là ý tưởng/kịch bản (ví dụ: `collect_text_data_conceptual.py`), cần thực hiện bằng các công cụ hoặc API thực tế.
-- Chất lượng nhạc sinh ra phụ thuộc vào dữ liệu và quá trình fine-tune.
+## 📧 Liên hệ
+
+- Email: your.email@example.com
+- GitHub: [your-username](https://github.com/your-username)
+- Website: [your-website.com](https://your-website.com)
