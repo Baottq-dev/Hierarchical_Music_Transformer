@@ -1,8 +1,15 @@
+"""
+Clustering module for AMT model.
+"""
+
 import json
 import numpy as np
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 import matplotlib.pyplot as plt
+from typing import List, Dict, Any
+import os
+from ..data_processing.midi_processor import analyze_midi_file
 
 def determine_optimal_k(embeddings_array, max_k=10, min_k=2):
     """
@@ -104,4 +111,171 @@ def cluster_embeddings(embeddings_file, output_file):
             json.dump(clustered_data, f, indent=4)
         print(f"Successfully saved clustered data with semantic tokens to {output_file}")
     except IOError:
-        print(f"Error: Could not write to output file {output_file}") 
+        print(f"Error: Could not write to output file {output_file}")
+
+class MIDIClusterer:
+    """
+    Clustering for MIDI files.
+    """
+    def __init__(self, n_clusters: int = 10):
+        """
+        Initialize clusterer.
+        Args:
+            n_clusters: Number of clusters
+        """
+        self.n_clusters = n_clusters
+        self.kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+        self.cluster_centers = None
+        self.cluster_labels = None
+    
+    def extract_features(self, midi_file: str) -> np.ndarray:
+        """
+        Extract features from MIDI file.
+        Args:
+            midi_file: Path to MIDI file
+        Returns:
+            Feature vector
+        """
+        # Analyze MIDI file
+        analysis = analyze_midi_file(midi_file)
+        
+        # Extract features
+        features = [
+            analysis["note_density"],
+            analysis["velocity_mean"],
+            analysis["velocity_std"],
+            analysis["note_range"],
+            analysis["tempo_mean"],
+            analysis["tempo_std"]
+        ]
+        
+        return np.array(features)
+    
+    def fit(self, midi_files: List[str]):
+        """
+        Fit clustering model.
+        Args:
+            midi_files: List of MIDI file paths
+        """
+        # Extract features
+        features = []
+        for midi_file in midi_files:
+            try:
+                feature_vector = self.extract_features(midi_file)
+                features.append(feature_vector)
+            except Exception as e:
+                print(f"Error processing {midi_file}: {e}")
+        
+        # Convert to numpy array
+        X = np.array(features)
+        
+        # Fit KMeans
+        self.kmeans.fit(X)
+        self.cluster_centers = self.kmeans.cluster_centers_
+        self.cluster_labels = self.kmeans.labels_
+    
+    def predict(self, midi_file: str) -> int:
+        """
+        Predict cluster for MIDI file.
+        Args:
+            midi_file: Path to MIDI file
+        Returns:
+            Cluster label
+        """
+        # Extract features
+        features = self.extract_features(midi_file)
+        
+        # Predict cluster
+        return self.kmeans.predict(features.reshape(1, -1))[0]
+    
+    def get_cluster_center(self, cluster_id: int) -> np.ndarray:
+        """
+        Get cluster center.
+        Args:
+            cluster_id: Cluster ID
+        Returns:
+            Cluster center vector
+        """
+        return self.cluster_centers[cluster_id]
+    
+    def get_cluster_files(self, midi_files: List[str], cluster_id: int) -> List[str]:
+        """
+        Get files in cluster.
+        Args:
+            midi_files: List of MIDI file paths
+            cluster_id: Cluster ID
+        Returns:
+            List of MIDI files in cluster
+        """
+        cluster_files = []
+        for i, midi_file in enumerate(midi_files):
+            if self.cluster_labels[i] == cluster_id:
+                cluster_files.append(midi_file)
+        return cluster_files
+
+def cluster_midi_files(
+    midi_files: List[str],
+    n_clusters: int = 10,
+    output_file: str = None
+) -> Dict[str, Any]:
+    """
+    Cluster MIDI files.
+    Args:
+        midi_files: List of MIDI file paths
+        n_clusters: Number of clusters
+        output_file: Path to output JSON file
+    Returns:
+        Dictionary containing clustering results
+    """
+    # Initialize clusterer
+    clusterer = MIDIClusterer(n_clusters=n_clusters)
+    
+    # Fit clustering model
+    clusterer.fit(midi_files)
+    
+    # Get cluster assignments
+    cluster_assignments = {}
+    for i, midi_file in enumerate(midi_files):
+        cluster_id = clusterer.cluster_labels[i]
+        if cluster_id not in cluster_assignments:
+            cluster_assignments[cluster_id] = []
+        cluster_assignments[cluster_id].append(midi_file)
+    
+    # Create results dictionary
+    results = {
+        "n_clusters": n_clusters,
+        "cluster_centers": clusterer.cluster_centers.tolist(),
+        "cluster_assignments": cluster_assignments
+    }
+    
+    # Save to file if specified
+    if output_file:
+        os.makedirs(os.path.dirname(output_file), exist_ok=True)
+        with open(output_file, 'w') as f:
+            json.dump(results, f, indent=2)
+    
+    return results
+
+if __name__ == "__main__":
+    # Set paths
+    midi_dir = "data/midi"
+    output_file = "data/processed/clusters.json"
+    
+    # Get MIDI files
+    midi_files = []
+    for root, _, files in os.walk(midi_dir):
+        for file in files:
+            if file.endswith('.mid'):
+                midi_files.append(os.path.join(root, file))
+    
+    # Cluster MIDI files
+    results = cluster_midi_files(midi_files, n_clusters=10, output_file=output_file)
+    
+    # Print results
+    print(f"Number of clusters: {results['n_clusters']}")
+    for cluster_id, files in results['cluster_assignments'].items():
+        print(f"\nCluster {cluster_id}:")
+        print(f"Number of files: {len(files)}")
+        print("Sample files:")
+        for file in files[:5]:
+            print(f"- {os.path.basename(file)}") 

@@ -1,127 +1,116 @@
 """
 Configuration module for AMT.
-Contains configuration settings and path management for the project.
 """
 
 import os
-import json
 from typing import Dict, Any
-from pathlib import Path
 
-class Config:
-    """Configuration manager for AMT."""
-    
-    def __init__(self, config_file: str = None):
-        """
-        Initialize configuration.
-        Args:
-            config_file: Path to configuration file (optional)
-        """
-        self.base_dir = Path(__file__).parent.parent
-        self.config = self._load_default_config()
-        
-        if config_file and os.path.exists(config_file):
-            self.load_config(config_file)
+# Data paths
+DATA_DIR = "data"
+MIDI_DIR = os.path.join(DATA_DIR, "midi")
+TEXT_DIR = os.path.join(DATA_DIR, "text")
+PROCESSED_DIR = os.path.join(DATA_DIR, "processed")
 
-    def _load_default_config(self) -> Dict[str, Any]:
-        """Load default configuration."""
-        return {
-            "paths": {
-                "data_dir": str(self.base_dir / "data"),
-                "raw_data_dir": str(self.base_dir / "data" / "raw"),
-                "processed_data_dir": str(self.base_dir / "data" / "processed"),
-                "model_dir": str(self.base_dir / "models"),
-                "output_dir": str(self.base_dir / "output"),
-                "logs_dir": str(self.base_dir / "logs")
-            },
-            "model": {
-                "name": "gpt2",
-                "max_length": 512,
-                "batch_size": 1,
-                "learning_rate": 5e-5,
-                "num_epochs": 3
-            },
-            "generation": {
-                "temperature": 0.7,
-                "top_k": 50,
-                "top_p": 0.9,
-                "max_length": 512
-            },
-            "clustering": {
-                "n_clusters": 10,
-                "random_state": 42
-            }
-        }
+# Model paths
+MODEL_DIR = "models"
+CHECKPOINT_DIR = os.path.join(MODEL_DIR, "checkpoints")
 
-    def load_config(self, config_file: str):
-        """
-        Load configuration from file.
-        Args:
-            config_file: Path to configuration file
-        """
-        try:
-            with open(config_file, "r") as f:
-                user_config = json.load(f)
-            
-            # Update default config with user config
-            self._update_dict(self.config, user_config)
-        except Exception as e:
-            print(f"Error loading config file: {e}")
+# Data processing
+MIDI_CONFIG = {
+    "time_resolution": 480,  # ticks per quarter note
+    "max_time_shift": 512,   # maximum time shift in ticks
+    "velocity_bins": 32,     # number of velocity bins
+    "midi_programs": {
+        'piano': 0,
+        'guitar': 24,
+        'violin': 40,
+        'drums': 0,  # Channel 10
+        'bass': 33,
+        'saxophone': 66,
+        'trumpet': 56,
+        'flute': 73,
+        'clarinet': 71,
+        'cello': 42,
+        'viola': 41,
+        'trombone': 57,
+        'organ': 19,
+        'synth': 80
+    }
+}
 
-    def _update_dict(self, d: Dict, u: Dict):
-        """Recursively update dictionary."""
-        for k, v in u.items():
-            if isinstance(v, dict) and k in d and isinstance(d[k], dict):
-                self._update_dict(d[k], v)
-            else:
-                d[k] = v
+TEXT_CONFIG = {
+    "max_length": 512,
+    "music_genres": {
+        'rock', 'pop', 'jazz', 'classical', 'electronic', 'hip hop', 'r&b', 'blues',
+        'country', 'folk', 'metal', 'punk', 'reggae', 'soul', 'funk', 'disco'
+    },
+    "music_instruments": {
+        'piano', 'guitar', 'drums', 'bass', 'violin', 'saxophone', 'trumpet',
+        'flute', 'clarinet', 'cello', 'viola', 'trombone', 'organ', 'synth'
+    },
+    "music_emotions": {
+        'happy', 'sad', 'energetic', 'calm', 'angry', 'peaceful', 'melancholic',
+        'joyful', 'dark', 'bright', 'intense', 'soft', 'loud', 'gentle'
+    }
+}
 
-    def save_config(self, config_file: str):
-        """
-        Save current configuration to file.
-        Args:
-            config_file: Path to save configuration file
-        """
-        try:
-            os.makedirs(os.path.dirname(config_file), exist_ok=True)
-            with open(config_file, "w") as f:
-                json.dump(self.config, f, indent=4)
-        except Exception as e:
-            print(f"Error saving config file: {e}")
+# Model configuration
+MODEL_CONFIG = {
+    "embedding_dim": 768,    # BERT embedding dimension
+    "hidden_dim": 1024,      # GPT-2 hidden dimension
+    "vocab_size": 512,       # MIDI event vocabulary size
+    "max_seq_length": 1024,  # Maximum sequence length
+    "num_layers": 6,         # Number of transformer layers
+    "num_heads": 8,          # Number of attention heads
+    "dropout": 0.1           # Dropout rate
+}
 
-    def get_path(self, key: str) -> str:
-        """
-        Get path from configuration.
-        Args:
-            key: Path key (e.g., "data_dir", "model_dir")
-        Returns:
-            Path string
-        """
-        return self.config["paths"].get(key)
+# Training configuration
+TRAINING_CONFIG = {
+    "batch_size": 32,
+    "num_epochs": 10,
+    "learning_rate": 1e-4,
+    "warmup_steps": 1000,
+    "max_grad_norm": 1.0,
+    "save_steps": 1000,
+    "eval_steps": 1000
+}
 
-    def get_model_config(self) -> Dict[str, Any]:
-        """Get model configuration."""
-        return self.config["model"]
+# Generation configuration
+GENERATION_CONFIG = {
+    "max_length": 1024,
+    "temperature": 0.7,
+    "top_k": 50,
+    "top_p": 0.9,
+    "num_return_sequences": 1
+}
 
-    def get_generation_config(self) -> Dict[str, Any]:
-        """Get generation configuration."""
-        return self.config["generation"]
+# Evaluation configuration
+EVALUATION_CONFIG = {
+    "metrics": [
+        "note_density_ratio",
+        "velocity_similarity",
+        "note_range_similarity",
+        "time_signature_match",
+        "tempo_similarity"
+    ],
+    "reference_dir": os.path.join(DATA_DIR, "reference"),
+    "output_dir": os.path.join(DATA_DIR, "evaluation")
+}
 
-    def get_clustering_config(self) -> Dict[str, Any]:
-        """Get clustering configuration."""
-        return self.config["clustering"]
-
-    def create_directories(self):
-        """Create all necessary directories."""
-        for path in self.config["paths"].values():
-            os.makedirs(path, exist_ok=True)
-
-def load_config(config_file: str = None) -> Config:
+def get_config() -> Dict[str, Any]:
     """
-    Load configuration from file.
-    Args:
-        config_file: Path to configuration file (optional)
+    Get complete configuration.
     Returns:
-        Config instance
+        Dictionary containing all configuration
     """
-    return Config(config_file) 
+    return {
+        "data": {
+            "midi": MIDI_CONFIG,
+            "text": TEXT_CONFIG
+        },
+        "model": MODEL_CONFIG,
+        "training": TRAINING_CONFIG,
+        "generation": GENERATION_CONFIG,
+        "evaluation": EVALUATION_CONFIG
+    } 

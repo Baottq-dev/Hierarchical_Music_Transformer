@@ -1,6 +1,6 @@
 """
 Text processing module for AMT.
-Contains functions for processing text descriptions and generating embeddings.
+Contains functions for processing text descriptions from Wikipedia.
 """
 
 import torch
@@ -10,55 +10,43 @@ from typing import List, Dict, Any
 import re
 import nltk
 from nltk.tokenize import word_tokenize
-from nltk.corpus import stopwords
-from nltk.stem import WordNetLemmatizer
-from sklearn.feature_extraction.text import TfidfVectorizer
-import spacy
 from collections import Counter
+import spacy
+import requests
+from bs4 import BeautifulSoup
 
 # Download required NLTK data
-try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:
-    nltk.download('punkt')
-try:
-    nltk.data.find('corpora/stopwords')
-except LookupError:
-    nltk.download('stopwords')
-try:
-    nltk.data.find('corpora/wordnet')
-except LookupError:
-    nltk.download('wordnet')
+nltk.download('punkt')
+nltk.download('averaged_perceptron_tagger')
 
-# Load spaCy model for music-specific NLP
-try:
-    nlp = spacy.load('en_core_web_sm')
-except OSError:
-    print("Downloading spaCy model...")
-    spacy.cli.download('en_core_web_sm')
-    nlp = spacy.load('en_core_web_sm')
+# Load spaCy model
+nlp = spacy.load('en_core_web_sm')
 
-# Music-specific keywords and patterns
+# Initialize BERT
+tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+model = BertModel.from_pretrained('bert-base-uncased')
+
+# Constants for music-specific keywords
 MUSIC_GENRES = {
-    'classical', 'jazz', 'rock', 'pop', 'blues', 'folk', 'electronic', 
-    'hip hop', 'r&b', 'country', 'metal', 'reggae', 'latin'
+    'rock', 'pop', 'jazz', 'classical', 'electronic', 'hip hop', 'r&b', 'blues',
+    'country', 'folk', 'metal', 'punk', 'reggae', 'soul', 'funk', 'disco'
 }
 
 MUSIC_INSTRUMENTS = {
-    'piano', 'guitar', 'violin', 'drums', 'bass', 'saxophone', 'trumpet',
-    'flute', 'clarinet', 'cello', 'viola', 'organ', 'synthesizer'
+    'piano', 'guitar', 'drums', 'bass', 'violin', 'saxophone', 'trumpet',
+    'flute', 'clarinet', 'cello', 'viola', 'trombone', 'organ', 'synth'
 }
 
 MUSIC_EMOTIONS = {
-    'happy', 'sad', 'energetic', 'calm', 'melancholic', 'joyful', 'peaceful',
-    'dramatic', 'romantic', 'mysterious', 'intense', 'relaxing'
+    'happy', 'sad', 'energetic', 'calm', 'angry', 'peaceful', 'melancholic',
+    'joyful', 'dark', 'bright', 'intense', 'soft', 'loud', 'gentle'
 }
 
 def clean_text(text: str) -> str:
     """
-    Clean and preprocess input text.
+    Clean and preprocess text.
     Args:
-        text: Input text to clean
+        text: Input text
     Returns:
         Cleaned text
     """
@@ -66,7 +54,7 @@ def clean_text(text: str) -> str:
     text = text.lower()
     
     # Remove special characters but keep important punctuation
-    text = re.sub(r'[^a-zA-Z\s.,!?]', '', text)
+    text = re.sub(r'[^a-z0-9\s.,!?]', '', text)
     
     # Remove extra whitespace
     text = ' '.join(text.split())
@@ -79,51 +67,53 @@ def extract_music_keywords(text: str) -> Dict[str, List[str]]:
     Args:
         text: Input text
     Returns:
-        Dictionary containing different types of music keywords
+        Dictionary of extracted keywords by category
     """
-    doc = nlp(text.lower())
-    words = [token.text for token in doc if not token.is_stop and token.is_alpha]
+    words = word_tokenize(text.lower())
     
-    # Extract different types of keywords
-    keywords = {
-        'genres': [word for word in words if word in MUSIC_GENRES],
-        'instruments': [word for word in words if word in MUSIC_INSTRUMENTS],
-        'emotions': [word for word in words if word in MUSIC_EMOTIONS]
+    genres = [word for word in words if word in MUSIC_GENRES]
+    instruments = [word for word in words if word in MUSIC_INSTRUMENTS]
+    emotions = [word for word in words if word in MUSIC_EMOTIONS]
+    
+    return {
+        "genres": genres,
+        "instruments": instruments,
+        "emotions": emotions
     }
-    
-    return keywords
 
 def extract_keywords(text: str, max_keywords: int = 10) -> List[str]:
     """
-    Extract keywords from text using TF-IDF.
+    Extract keywords using TF-IDF.
     Args:
         text: Input text
         max_keywords: Maximum number of keywords to extract
     Returns:
-        List of keywords
+        List of extracted keywords
     """
-    # Clean text
-    cleaned_text = clean_text(text)
-    
-    # Tokenize and remove stopwords
-    stop_words = set(stopwords.words('english'))
-    lemmatizer = WordNetLemmatizer()
-    tokens = word_tokenize(cleaned_text)
-    tokens = [lemmatizer.lemmatize(token) for token in tokens if token not in stop_words]
-    
-    # Create TF-IDF vectorizer
-    vectorizer = TfidfVectorizer(max_features=max_keywords)
     try:
-        tfidf_matrix = vectorizer.fit_transform([cleaned_text])
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        
+        # Create TF-IDF vectorizer
+        vectorizer = TfidfVectorizer(
+            max_features=max_keywords,
+            stop_words='english'
+        )
+        
+        # Fit and transform text
+        tfidf_matrix = vectorizer.fit_transform([text])
+        
+        # Get feature names
         feature_names = vectorizer.get_feature_names_out()
         
         # Get top keywords
-        tfidf_scores = tfidf_matrix.toarray()[0]
-        keyword_indices = np.argsort(tfidf_scores)[-max_keywords:]
-        keywords = [feature_names[i] for i in keyword_indices]
+        keywords = []
+        for i in range(len(feature_names)):
+            if tfidf_matrix[0, i] > 0:
+                keywords.append(feature_names[i])
         
         return keywords
-    except:
+    except Exception as e:
+        print(f"Error extracting keywords: {e}")
         return []
 
 def get_text_features(text: str) -> Dict[str, Any]:
@@ -132,29 +122,82 @@ def get_text_features(text: str) -> Dict[str, Any]:
     Args:
         text: Input text
     Returns:
-        Dictionary containing text features
+        Dictionary of text features
     """
     # Clean text
     cleaned_text = clean_text(text)
     
-    # Tokenize
-    tokens = word_tokenize(cleaned_text)
-    
     # Get music-specific keywords
-    music_keywords = extract_music_keywords(text)
+    music_keywords = extract_music_keywords(cleaned_text)
     
-    # Calculate basic statistics
-    features = {
-        "word_count": len(tokens),
-        "unique_words": len(set(tokens)),
-        "avg_word_length": np.mean([len(word) for word in tokens]) if tokens else 0,
-        "keywords": extract_keywords(text),
-        "music_genres": music_keywords['genres'],
-        "music_instruments": music_keywords['instruments'],
-        "music_emotions": music_keywords['emotions']
+    # Get general keywords
+    keywords = extract_keywords(cleaned_text)
+    
+    # Get word count and unique words
+    words = word_tokenize(cleaned_text)
+    word_count = len(words)
+    unique_words = len(set(words))
+    
+    return {
+        "word_count": word_count,
+        "unique_words": unique_words,
+        "music_genres": music_keywords["genres"],
+        "music_instruments": music_keywords["instruments"],
+        "music_emotions": music_keywords["emotions"],
+        "keywords": keywords
     }
+
+def get_bert_embedding(text: str) -> np.ndarray:
+    """
+    Generate BERT embedding for text.
+    Args:
+        text: Input text
+    Returns:
+        BERT embedding vector
+    """
+    # Tokenize text
+    inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
     
-    return features
+    # Generate embeddings
+    with torch.no_grad():
+        outputs = model(**inputs)
+    
+    # Use [CLS] token embedding
+    embedding = outputs.last_hidden_state[0, 0, :].numpy()
+    
+    return embedding
+
+def scrape_wikipedia(artist: str, song: str) -> str:
+    """
+    Scrape Wikipedia for song information.
+    Args:
+        artist: Artist name
+        song: Song title
+    Returns:
+        Scraped text description
+    """
+    try:
+        # Construct search query
+        query = f"{artist} {song}"
+        url = f"https://en.wikipedia.org/wiki/{query.replace(' ', '_')}"
+        
+        # Get page content
+        response = requests.get(url)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Extract main content
+        content = soup.find('div', {'class': 'mw-parser-output'})
+        if content:
+            # Get first paragraph
+            paragraphs = content.find_all('p')
+            for p in paragraphs:
+                if p.text.strip():
+                    return p.text.strip()
+        
+        return ""
+    except Exception as e:
+        print(f"Error scraping Wikipedia: {e}")
+        return ""
 
 def process_text_descriptions(text_list: List[str]) -> Dict[str, Any]:
     """
@@ -204,26 +247,28 @@ def process_text_descriptions(text_list: List[str]) -> Dict[str, Any]:
         }
     }
 
-def get_bert_embeddings(text_list: List[str], model_name: str = 'bert-base-uncased') -> List[np.ndarray]:
+def create_training_examples(midi_file: str, text_description: str) -> Dict[str, Any]:
     """
-    Generate BERT embeddings for a list of texts.
+    Create training example from MIDI file and text description.
     Args:
-        text_list: List of input texts
-        model_name: Name of BERT model to use
+        midi_file: Path to MIDI file
+        text_description: Text description
     Returns:
-        List of embeddings (numpy arrays)
+        Dictionary containing training example
     """
-    tokenizer = BertTokenizer.from_pretrained(model_name)
-    model = BertModel.from_pretrained(model_name)
-    model.eval()
-
-    embeddings_list = []
-    with torch.no_grad():
-        for text in text_list:
-            cleaned_text = clean_text(text)
-            inputs = tokenizer(cleaned_text, return_tensors='pt', truncation=True, padding=True, max_length=512)
-            outputs = model(**inputs)
-            cls_embedding = outputs.last_hidden_state[:, 0, :].squeeze().cpu().numpy()
-            embeddings_list.append(cls_embedding)
+    # Process text
+    text_features = get_text_features(text_description)
+    text_embedding = get_bert_embedding(text_description)
     
-    return embeddings_list 
+    # Process MIDI
+    from .midi_processor import midi_to_event_sequence
+    event_sequence = midi_to_event_sequence(midi_file)
+    
+    # Create training example
+    return {
+        "midi_file": midi_file,
+        "text_description": text_description,
+        "text_features": text_features,
+        "text_embedding": text_embedding.tolist(),
+        "event_sequence": event_sequence
+    } 
