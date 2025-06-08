@@ -31,73 +31,132 @@ Các giải pháp hiện có vẫn còn nhiều hạn chế:
 - Cần công cụ dễ sử dụng
 - Đòi hỏi tính linh hoạt cao"
 
-## Slide 5: Kiến trúc hệ thống tổng quan
-"Đây là kiến trúc tổng quan của hệ thống AMT. Chúng ta có thể thấy luồng xử lý từ text input đến generated music thông qua các bước:
-1. Text input được xử lý qua BERT để tạo embeddings
-2. Embeddings được chuyển đổi qua projection layer
-3. Kết hợp với MIDI events để tạo ra âm nhạc thông qua GPT-2"
+## Slide 5: Pipeline tổng thể
+"Đây là pipeline tổng thể của hệ thống AMT, bao gồm 5 giai đoạn chính:
 
-## Slide 6: Pipeline xử lý dữ liệu
-"Pipeline xử lý dữ liệu của chúng tôi bao gồm 5 bước chính:
+1. Data Collection:
+   - Thu thập MIDI files từ Lakh MIDI Clean dataset
+   - Thu thập mô tả văn bản từ Wikipedia
+   - Tạo dataset kết hợp MIDI và text
+
+2. Data Processing:
+   - Xử lý văn bản và MIDI
+   - Trích xuất đặc trưng
+   - Chuẩn bị dữ liệu training
+
+3. Model Training:
+   - Khởi tạo và huấn luyện model
+   - Validation và điều chỉnh
+   - Lưu model tốt nhất
+
+4. Music Generation:
+   - Xử lý input text
+   - Tạo MIDI events
+   - Tạo file MIDI
+
+5. Evaluation:
+   - Tính toán metrics
+   - So sánh kết quả
+   - Tạo báo cáo"
+
+## Slide 6: Chi tiết Data Collection
+"Giai đoạn thu thập dữ liệu bao gồm:
+1. Thu thập MIDI files:
+   - Sử dụng Lakh MIDI Clean dataset
+   - Chất lượng cao và đa dạng
+   - Nhiều thể loại và nhạc cụ
+
+2. Thu thập mô tả văn bản:
+   - Từ Wikipedia
+   - Mô tả âm nhạc chi tiết
+   - Thông tin về thể loại và phong cách
+
+3. Tạo dataset:
+   - Kết hợp MIDI và text
+   - Chuẩn hóa định dạng
+   - Tạo cặp dữ liệu training"
+
+## Slide 7: Chi tiết Data Processing
+"Giai đoạn xử lý dữ liệu bao gồm:
 
 1. Text Processing:
    - Tiền xử lý văn bản
    - Trích xuất từ khóa
-   - Xử lý qua BERT
+   - Tokenization với BERT
 
 2. MIDI Processing:
-   - Phân tích file MIDI
+   - Đọc và phân tích file MIDI
    - Trích xuất sự kiện
    - Token hóa các nốt nhạc
 
-3. Data Preparation:
+3. Feature Extraction:
+   - Trích xuất đặc trưng từ text
+   - Trích xuất đặc trưng từ MIDI
+   - Kết hợp các đặc trưng
+
+4. Data Preparation:
    - Tạo batch
-   - Kỹ thuật feature engineering
-   - Chuẩn bị dữ liệu training
+   - Padding sequences
+   - Chuẩn bị labels"
 
-4. Model Training:
-   - Quá trình training
-   - Tối ưu hóa model
-   - Điều chỉnh tham số
+## Slide 8: Chi tiết Model Training
+"Giai đoạn huấn luyện model bao gồm:
 
-5. Music Generation:
-   - Xử lý văn bản đầu vào
-   - Tạo sự kiện âm nhạc
-   - Tạo file MIDI"
+1. Khởi tạo model:
+   - BERT encoder (12 layers, 12 heads)
+   - Projection layer (768 -> 1024)
+   - GPT-2 decoder (6 layers, 8 heads)
 
-## Slide 7: Model Architecture
-"Kiến trúc model của chúng tôi bao gồm 3 thành phần chính:
+2. Training process:
+   - Forward pass
+   - Loss calculation
+   - Backward pass
+   - Model update
 
-1. BERT Encoder:
-   - 12 transformer layers
-   - 12 attention heads
-   - Output: 768 dimensions
+3. Validation:
+   - Đánh giá trên validation set
+   - Điều chỉnh hyperparameters
+   - Lưu model tốt nhất"
 
-2. Projection Layer:
-   - Chuyển đổi từ 768 sang 1024 dimensions
-   - Dropout: 0.1
+## Slide 9: Chi tiết Music Generation
+"Giai đoạn tạo nhạc bao gồm:
 
-3. GPT-2 Decoder:
-   - 6 transformer layers
-   - 8 attention heads
-   - Output: Generated MIDI events"
+1. Xử lý input text:
+   - Tạo text embeddings
+   - Chuẩn bị context
+   - Thiết lập temperature
 
-## Slide 8: Bộ dữ liệu
-"Chúng tôi sử dụng hai nguồn dữ liệu chính:
+2. Tạo MIDI events:
+   - Autoregressive generation
+   - Tạo chuỗi sự kiện
+   - Đảm bảo tính nhất quán
 
-1. MIDI Data từ Lakh MIDI Clean dataset:
-   - Chất lượng cao
-   - Đa dạng thể loại
-   - Nhiều nhạc cụ
-   - Metadata đầy đủ
+3. Tạo file MIDI:
+   - Chuyển đổi events thành MIDI
+   - Tạo tracks
+   - Lưu file"
 
-2. Text Data từ Wikipedia:
-   - Mô tả âm nhạc
-   - Thông tin thể loại
-   - Mô tả nhạc cụ
-   - Cảm xúc và phong cách"
+## Slide 10: Chi tiết Evaluation
+"Giai đoạn đánh giá bao gồm:
 
-## Slide 9: Tiến độ hiện tại
+1. Tính toán metrics:
+   - Note density ratio
+   - Velocity similarity
+   - Note range similarity
+   - Time signature match
+   - Tempo similarity
+
+2. So sánh kết quả:
+   - So với dataset tham chiếu
+   - So với các model khác
+   - Đánh giá chất lượng
+
+3. Tạo báo cáo:
+   - Tổng hợp kết quả
+   - Phân tích điểm mạnh/yếu
+   - Đề xuất cải thiện"
+
+## Slide 11: Tiến độ hiện tại
 "Hiện tại chúng tôi đã:
 1. Đã hoàn thành:
    - Nghiên cứu và phân tích yêu cầu
@@ -114,7 +173,7 @@ Các giải pháp hiện có vẫn còn nhiều hạn chế:
    - Phát triển và huấn luyện model
    - Đánh giá và tối ưu"
 
-## Slide 10: Thách thức và giải pháp
+## Slide 12: Thách thức và giải pháp
 "Chúng tôi đang đối mặt với một số thách thức:
 
 1. Thách thức về dữ liệu:
@@ -132,7 +191,7 @@ Các giải pháp hiện có vẫn còn nhiều hạn chế:
    - So sánh với âm nhạc tham chiếu
    - Đảm bảo chất lượng"
 
-## Slide 11: Kết luận
+## Slide 13: Kết luận
 "Tóm lại:
 1. Đã xác định rõ mục tiêu và phạm vi
 2. Đã thiết kế kiến trúc hệ thống
@@ -145,7 +204,7 @@ Hướng tiếp theo:
 3. Đánh giá và tối ưu
 4. Tích hợp và kiểm thử"
 
-## Slide 12: Cảm ơn
+## Slide 14: Cảm ơn
 "Cảm ơn mọi người đã lắng nghe. Tôi rất mong nhận được ý kiến đóng góp từ các bạn."
 
 ## Lưu ý khi thuyết trình:

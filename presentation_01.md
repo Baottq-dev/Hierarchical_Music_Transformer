@@ -33,110 +33,147 @@
 - Đòi hỏi tính linh hoạt cao
 
 ## 3. Giải pháp đề xuất
-### 3.1. Kiến trúc hệ thống tổng quan
-```mermaid
-graph LR
-    A[Text Input] --> B[BERT Embedding]
-    B --> C[Projection Layer]
-    C --> D[GPT-2 Decoder]
-    D --> E[Generated Music]
-```
-
-### 3.2. Pipeline xử lý dữ liệu
+### 3.1. Pipeline tổng thể
 ```mermaid
 graph TD
-    A[Input Data] --> B[Text Processing]
-    A --> C[MIDI Processing]
-    B --> D[Data Preparation]
-    C --> D
-    D --> E[Model Training]
-    E --> F[Music Generation]
+    A[Input] --> B[Data Collection]
+    B --> C[Data Processing]
+    C --> D[Model Training]
+    D --> E[Music Generation]
+    E --> F[Evaluation]
+    
+    subgraph "Data Collection"
+        B1[Collect MIDI Files] --> B2[Collect Text Descriptions]
+        B2 --> B3[Create Dataset]
+    end
+    
+    subgraph "Data Processing"
+        C1[Text Processing] --> C2[MIDI Processing]
+        C2 --> C3[Feature Extraction]
+        C3 --> C4[Data Preparation]
+    end
+    
+    subgraph "Model Training"
+        D1[Initialize Model] --> D2[Train Model]
+        D2 --> D3[Validate Model]
+        D3 --> D4[Save Model]
+    end
+    
+    subgraph "Music Generation"
+        E1[Process Input Text] --> E2[Generate MIDI Events]
+        E2 --> E3[Create MIDI File]
+    end
+    
+    subgraph "Evaluation"
+        F1[Calculate Metrics] --> F2[Compare Results]
+        F2 --> F3[Generate Report]
+    end
 ```
 
-#### 3.2.1. Text Processing
-1. Text Preprocessing:
-   - Chuyển đổi lowercase
-   - Loại bỏ ký tự đặc biệt
-   - Chuẩn hóa định dạng
+### 3.2. Chi tiết các bước xử lý
 
-2. Keyword Extraction:
-   - Trích xuất từ khóa âm nhạc
-   - Phân loại thể loại
-   - Xác định nhạc cụ
+1. **Data Collection**
+   - Thu thập MIDI files từ Lakh MIDI Clean dataset
+   - Thu thập mô tả văn bản từ Wikipedia
+   - Tạo dataset kết hợp MIDI và text
 
-3. BERT Processing:
-   - Tokenization
-   - Thêm special tokens
-   - Tạo attention masks
+2. **Data Processing**
+   - Text Processing:
+     - Tiền xử lý văn bản
+     - Trích xuất từ khóa
+     - Tokenization với BERT
+   
+   - MIDI Processing:
+     - Đọc và phân tích file MIDI
+     - Trích xuất sự kiện (note on/off, control changes)
+     - Token hóa các nốt nhạc
+   
+   - Feature Extraction:
+     - Trích xuất đặc trưng từ text
+     - Trích xuất đặc trưng từ MIDI
+     - Kết hợp các đặc trưng
+   
+   - Data Preparation:
+     - Tạo batch
+     - Padding sequences
+     - Chuẩn bị labels
 
-#### 3.2.2. MIDI Processing
-1. MIDI Parsing:
-   - Đọc file MIDI
-   - Trích xuất metadata
-   - Phân tích tracks
+3. **Model Training**
+   - Khởi tạo model:
+     - BERT encoder (12 layers, 12 heads)
+     - Projection layer (768 -> 1024)
+     - GPT-2 decoder (6 layers, 8 heads)
+   
+   - Training process:
+     - Forward pass
+     - Loss calculation
+     - Backward pass
+     - Model update
+   
+   - Validation:
+     - Đánh giá trên validation set
+     - Điều chỉnh hyperparameters
+     - Lưu model tốt nhất
 
-2. Event Extraction:
-   - Note on/off events
-   - Control changes
-   - Tempo changes
+4. **Music Generation**
+   - Xử lý input text:
+     - Tạo text embeddings
+     - Chuẩn bị context
+     - Thiết lập temperature
+   
+   - Tạo MIDI events:
+     - Autoregressive generation
+     - Tạo chuỗi sự kiện
+     - Đảm bảo tính nhất quán
+   
+   - Tạo file MIDI:
+     - Chuyển đổi events thành MIDI
+     - Tạo tracks
+     - Lưu file
 
-3. Note Tokenization:
-   - Quantize time shifts
-   - Tạo (TIME_ON, NOTE, DURATION) triplets
+5. **Evaluation**
+   - Tính toán metrics:
+     - Note density ratio
+     - Velocity similarity
+     - Note range similarity
+     - Time signature match
+     - Tempo similarity
+   
+   - So sánh kết quả:
+     - So với dataset tham chiếu
+     - So với các model khác
+     - Đánh giá chất lượng
+   
+   - Tạo báo cáo:
+     - Tổng hợp kết quả
+     - Phân tích điểm mạnh/yếu
+     - Đề xuất cải thiện
 
-#### 3.2.3. Data Preparation
-1. Batch Creation:
-   - Padding sequences
-   - Preparing labels
-   - Data augmentation
+### 3.3. Các module chính
 
-2. Feature Engineering:
-   - Text embeddings
-   - MIDI features
-   - Style features
+1. **Data Processing Module**
+   - MIDI processor
+   - Text processor
+   - Feature extractor
+   - Data preparator
 
-#### 3.2.4. Model Training
-1. Training Process:
-   - Forward pass
-   - Loss calculation
-   - Backward pass
-   - Model update
+2. **Model Module**
+   - BERT encoder
+   - Projection layer
+   - GPT-2 decoder
+   - Training manager
 
-2. Optimization:
-   - Optimizer: AdamW
-   - Learning rate: 5e-5
-   - Gradient clipping: 1.0
+3. **Generation Module**
+   - Text processor
+   - Event generator
+   - MIDI creator
+   - Output handler
 
-#### 3.2.5. Music Generation
-1. Text Processing:
-   - Text embedding generation
-   - Context preparation
-   - Temperature setting
-
-2. Event Generation:
-   - Autoregressive generation
-   - Event sequence creation
-   - Style consistency
-
-3. MIDI Creation:
-   - Event to MIDI conversion
-   - Track creation
-   - File saving
-
-### 3.3. Model Architecture
-1. BERT Encoder:
-   - 12 transformer layers
-   - 12 attention heads
-   - Output: 768 dimensions
-
-2. Projection Layer:
-   - Chuyển đổi từ 768 sang 1024 dimensions
-   - Dropout: 0.1
-
-3. GPT-2 Decoder:
-   - 6 transformer layers
-   - 8 attention heads
-   - Output: Generated MIDI events
+4. **Evaluation Module**
+   - Metrics calculator
+   - Quality assessor
+   - Performance analyzer
+   - Report generator
 
 ## 4. Bộ dữ liệu
 ### 4.1. MIDI Data
