@@ -35,7 +35,7 @@
 - Cần công cụ dễ sử dụng
 - Đòi hỏi tính linh hoạt cao
 
-## 3. Giải pháp
+## 3. Giải pháp đề xuất
 
 ### 3.1. Kiến trúc hệ thống
 ```mermaid
@@ -111,85 +111,76 @@ graph TD
    - Validate data
    - Store in JSON format
 
-## 5. Đánh giá
+## 5. Tiến độ hiện tại
 
-### 5.1. Metrics
-1. **Note Density Ratio** (0.85)
-   - So sánh mật độ nốt
-   - Đo lường tương đồng nhịp điệu
+### 5.1. Đã hoàn thành
+- Nghiên cứu và phân tích yêu cầu
+- Thiết kế kiến trúc hệ thống
+- Lựa chọn công nghệ và framework
+- Chuẩn bị môi trường phát triển
 
-2. **Velocity Similarity** (0.82)
-   - So sánh phân bố velocity
-   - Đo lường tương đồng động lực
+### 5.2. Đang thực hiện
+- Thu thập và xử lý dữ liệu MIDI
+- Thu thập và xử lý dữ liệu text
+- Phát triển các module xử lý dữ liệu
+- Thiết kế và triển khai model
 
-3. **Note Range Similarity** (0.78)
-   - So sánh phạm vi nốt
-   - Đo lường tương đồng giai điệu
+### 5.3. Kế hoạch tiếp theo
+- Hoàn thiện xử lý dữ liệu
+- Phát triển và huấn luyện model
+- Đánh giá và tối ưu hiệu suất
+- Tích hợp và kiểm thử hệ thống
 
-4. **Time Signature Match** (0.90)
-   - So sánh time signature
-   - Đo lường tương đồng cấu trúc
+## 6. Thách thức và giải pháp
 
-5. **Tempo Similarity** (0.88)
-   - So sánh tempo
-   - Đo lường tương đồng thời gian
+### 6.1. Thách thức
+1. **Dữ liệu**
+   - Chất lượng và số lượng dữ liệu
+   - Đa dạng thể loại và phong cách
+   - Xử lý và chuẩn hóa dữ liệu
 
-### 5.2. Kết quả
-- Hiệu suất tổng thể cao
-- Tương đồng tốt với âm nhạc tham chiếu
-- Chất lượng âm nhạc được đảm bảo
-- Đa dạng trong sáng tác
+2. **Model**
+   - Kiến trúc phức tạp
+   - Yêu cầu tài nguyên cao
+   - Tối ưu hiệu suất
 
-## 6. Hướng phát triển
+3. **Đánh giá**
+   - Metrics đánh giá chủ quan
+   - So sánh với âm nhạc tham chiếu
+   - Đảm bảo chất lượng
 
-### 6.1. Short-term
-1. **Data Processing**
-   - Thêm nguồn dữ liệu
-   - Cải thiện tiền xử lý
-   - Tăng cường validation
+### 6.2. Giải pháp
+1. **Dữ liệu**
+   - Sử dụng Lakh MIDI Clean dataset
+   - Thu thập text từ Wikipedia
+   - Xử lý và chuẩn hóa dữ liệu
 
-2. **Model Architecture**
-   - Thử nghiệm kiến trúc mới
-   - Tối ưu hyperparameters
-   - Cải thiện training
+2. **Model**
+   - Sử dụng BERT và GPT-2
+   - Tối ưu kiến trúc
+   - Sử dụng mixed precision
 
-3. **Evaluation**
-   - Thêm metrics
-   - Cải thiện visualization
-   - Tăng cường phân tích
-
-### 6.2. Long-term
-1. **Features**
-   - Generation real-time
-   - Hỗ trợ multi-track
-   - Chuyển đổi phong cách
-
-2. **Applications**
-   - Sáng tác nhạc
-   - Phát triển game
-   - Soạn nhạc phim
-
-3. **Research**
-   - Kiến trúc mới
-   - Đánh giá tốt hơn
-   - Generation nâng cao
+3. **Đánh giá**
+   - Phát triển metrics khách quan
+   - So sánh với dataset tham chiếu
+   - Đánh giá từ người dùng
 
 ## 7. Kết luận
 
 ### 7.1. Tóm tắt
-- Hệ thống AMT đã được phát triển thành công
-- Đạt được các mục tiêu đề ra
-- Hiệu suất tốt trong đánh giá
-- Tiềm năng phát triển lớn
+- Đã xác định rõ mục tiêu và phạm vi
+- Đã thiết kế kiến trúc hệ thống
+- Đã chuẩn bị dữ liệu và môi trường
+- Đang tiến hành phát triển
 
-### 7.2. Đóng góp
-- Công cụ tạo nhạc mới
-- Phương pháp đánh giá
-- Dataset xử lý
-- Kiến trúc model
+### 7.2. Hướng tiếp theo
+- Hoàn thiện xử lý dữ liệu
+- Phát triển và huấn luyện model
+- Đánh giá và tối ưu
+- Tích hợp và kiểm thử
 
-### 7.3. Hướng tiếp theo
-- Mở rộng tính năng
-- Tối ưu hiệu suất
-- Phát triển ứng dụng
-- Nghiên cứu sâu hơn 
+### 7.3. Kỳ vọng
+- Tạo ra hệ thống tạo nhạc hiệu quả
+- Đáp ứng nhu cầu người dùng
+- Mở rộng tính năng và ứng dụng
+- Đóng góp cho cộng đồng 
