@@ -37,7 +37,7 @@
 
 ## 3. Giải pháp đề xuất
 
-### 3.1. Kiến trúc hệ thống
+### 3.1. Kiến trúc hệ thống tổng quan
 ```mermaid
 graph TD
     A[Text Input] --> B[BERT Embedding]
@@ -47,35 +47,173 @@ graph TD
     E --> F[Generated Music]
 ```
 
-### 3.2. Các thành phần chính
-1. **BERT Encoder**
-   - Xử lý mô tả văn bản
-   - Tạo text embeddings
-   - Architecture: BERT-base-uncased
-   - Embedding dimension: 768
+### 3.2. Chi tiết kiến trúc
 
-2. **GPT-2 Decoder**
-   - Tạo chuỗi sự kiện MIDI
-   - Architecture: GPT-2
-   - Hidden dimension: 1024
-   - 6 layers, 8 attention heads
-
-3. **Projection Layer**
-   - Kết nối BERT và GPT-2
-   - Input: 768 dimensions
-   - Output: 1024 dimensions
-   - Activation: Linear
-
-### 3.3. Pipeline xử lý dữ liệu
+#### 3.2.1. Text Processing Pipeline
 ```mermaid
 graph TD
-    A[Lakh MIDI Clean] --> B[MIDI Processing]
-    C[Wikipedia] --> D[Text Processing]
-    B --> E[Note Tokenization]
-    D --> F[Text Embedding]
-    E --> G[Training Data]
-    F --> G
+    A[Text Input] --> B[Text Preprocessing]
+    B --> C[Keyword Extraction]
+    C --> D[BERT Tokenization]
+    D --> E[BERT Encoder]
+    E --> F[Text Embeddings]
 ```
+
+1. **Text Preprocessing**
+   - Chuyển đổi lowercase
+   - Loại bỏ ký tự đặc biệt
+   - Loại bỏ khoảng trắng thừa
+   - Chuẩn hóa định dạng
+
+2. **Keyword Extraction**
+   - Trích xuất từ khóa âm nhạc
+   - Phân loại thể loại
+   - Xác định nhạc cụ
+   - Phân tích cảm xúc
+
+3. **BERT Processing**
+   - Tokenization với BERT tokenizer
+   - Thêm special tokens
+   - Padding và truncation
+   - Tạo attention masks
+
+#### 3.2.2. MIDI Processing Pipeline
+```mermaid
+graph TD
+    A[MIDI Input] --> B[MIDI Parsing]
+    B --> C[Event Extraction]
+    C --> D[Note Tokenization]
+    D --> E[Event Sequence]
+```
+
+1. **MIDI Parsing**
+   - Đọc file MIDI
+   - Trích xuất metadata
+   - Phân tích tracks
+   - Xử lý timing
+
+2. **Event Extraction**
+   - Note on/off events
+   - Control changes
+   - Tempo changes
+   - Time signature changes
+
+3. **Note Tokenization**
+   - Quantize time shifts
+   - Quantize velocities
+   - Tạo (TIME_ON, NOTE, DURATION) triplets
+   - Chuẩn hóa giá trị
+
+#### 3.2.3. Model Architecture
+
+1. **BERT Encoder**
+   - Architecture: BERT-base-uncased
+   - Input: Text tokens (max length: 512)
+   - Output: Text embeddings (768 dimensions)
+   - Layers: 12 transformer layers
+   - Attention heads: 12
+   - Activation: GELU
+
+2. **Projection Layer**
+   - Input: BERT embeddings (768)
+   - Output: GPT-2 hidden dimension (1024)
+   - Architecture: Linear layer
+   - Activation: Linear
+   - Dropout: 0.1
+
+3. **GPT-2 Decoder**
+   - Architecture: GPT-2
+   - Input: Projected embeddings + MIDI events
+   - Output: Generated MIDI events
+   - Hidden dimension: 1024
+   - Layers: 6 transformer layers
+   - Attention heads: 8
+   - Activation: GELU
+   - Dropout: 0.1
+
+#### 3.2.4. Training Pipeline
+```mermaid
+graph TD
+    A[Training Data] --> B[Data Loader]
+    B --> C[Forward Pass]
+    C --> D[Loss Calculation]
+    D --> E[Backward Pass]
+    E --> F[Model Update]
+```
+
+1. **Data Preparation**
+   - Batch creation
+   - Padding sequences
+   - Creating attention masks
+   - Preparing labels
+
+2. **Training Process**
+   - Forward pass
+   - Loss calculation
+   - Backward pass
+   - Model update
+   - Learning rate scheduling
+   - Gradient clipping
+
+3. **Optimization**
+   - Optimizer: AdamW
+   - Learning rate: 5e-5
+   - Weight decay: 0.01
+   - Warmup steps: 1000
+   - Gradient clipping: 1.0
+
+#### 3.2.5. Generation Pipeline
+```mermaid
+graph TD
+    A[Text Input] --> B[Text Processing]
+    B --> C[Model Forward]
+    C --> D[Event Generation]
+    D --> E[MIDI Creation]
+```
+
+1. **Text Processing**
+   - Text embedding generation
+   - Context preparation
+   - Temperature setting
+   - Top-k/top-p sampling
+
+2. **Event Generation**
+   - Autoregressive generation
+   - Event sequence creation
+   - Length control
+   - Style consistency
+
+3. **MIDI Creation**
+   - Event to MIDI conversion
+   - Track creation
+   - Timing adjustment
+   - File saving
+
+### 3.3. Các module chính
+
+1. **Data Processing Module**
+   - MIDI processor
+   - Text processor
+   - Data preparation
+   - Validation
+
+2. **Model Module**
+   - BERT encoder
+   - GPT-2 decoder
+   - Projection layer
+   - Training logic
+
+3. **Generation Module**
+   - Text processing
+   - Music generation
+   - MIDI creation
+   - Output handling
+
+4. **Evaluation Module**
+   - Metrics calculation
+   - Quality assessment
+   - Performance analysis
+   - Visualization
 
 ## 4. Bộ dữ liệu
 
