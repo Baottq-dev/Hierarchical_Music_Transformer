@@ -283,14 +283,6 @@ python source/scripts/main.py
    - Plot metrics
    - Show comparisons
 
-## 📈 Kết quả
-
-### Performance
-- Note density ratio: 0.85
-- Velocity similarity: 0.82
-- Note range similarity: 0.78
-- Time signature match: 0.90
-- Tempo similarity: 0.88
 
 ### Improvements
 1. **Text Processing**:
