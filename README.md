@@ -115,7 +115,10 @@ source venv/bin/activate
 
 3. Cài đặt dependencies:
 ```bash
-pip install -r requirement.txt
+pip install -r requirements.txt
+# Tải dữ liệu NLP bổ sung (chạy một lần)
+python -m nltk.downloader punkt averaged_perceptron_tagger
+python -m spacy download en_core_web_sm
 ```
 
 4. Tải Lakh MIDI Clean dataset:
@@ -159,9 +162,10 @@ python source/model/generation.py
 python source/evaluation/metrics.py
 ```
 
-### 6. Chạy toàn bộ pipeline
+### 6. Chạy toàn bộ pipeline (End-to-End)
 ```bash
-python source/run_pipeline.py
+# Pipeline đầy đủ (5 bước: metadata → wiki → embedding → clustering → training data)
+python source/scripts/main.py
 ```
 
 ## 🔄 Pipeline xử lý dữ liệu

@@ -271,4 +271,18 @@ def create_training_examples(midi_file: str, text_description: str) -> Dict[str,
         "text_features": text_features,
         "text_embedding": text_embedding.tolist(),
         "event_sequence": event_sequence
-    } 
+    }
+
+def get_bert_embeddings(text_list: List[str]) -> List[np.ndarray]:
+    """
+    Generate BERT embeddings for a batch of text strings.
+    Args:
+        text_list: List of input texts
+    Returns:
+        List of numpy arrays representing BERT embeddings
+    """
+    embeddings: List[np.ndarray] = []
+    for txt in text_list:
+        emb = get_bert_embedding(txt)
+        embeddings.append(emb)
+    return embeddings 

@@ -1,5 +1,6 @@
 import os
 import json
+import argparse
 
 def list_midi_files_and_metadata(base_dir):
     """
@@ -31,4 +32,17 @@ def save_metadata(metadata_list, output_file):
     """Saves metadata to a JSON file."""
     with open(output_file, "w") as f:
         json.dump(metadata_list, f, indent=4)
-    print(f"Found {len(metadata_list)} MIDI files. Metadata saved to {output_file}") 
+    print(f"Found {len(metadata_list)} MIDI files. Metadata saved to {output_file}")
+
+def main():
+    """CLI for listing MIDI metadata and saving to JSON."""
+    parser = argparse.ArgumentParser(description="Scan a directory recursively for .mid/.midi files and save simple metadata (artist, title, path) to JSON.")
+    parser.add_argument("midi_dir", help="Root directory containing MIDI files")
+    parser.add_argument("output_json", help="Path to write JSON metadata list")
+    args = parser.parse_args()
+
+    meta = list_midi_files_and_metadata(args.midi_dir)
+    save_metadata(meta, args.output_json)
+
+if __name__ == "__main__":
+    main() 
