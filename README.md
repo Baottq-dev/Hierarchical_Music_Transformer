@@ -106,47 +106,30 @@ python -m spacy download en_core_web_sm
 - Truy cập [Lakh MIDI Clean](https://colinraffel.com/projects/lmd/)
 - Tải và giải nén vào thư mục `data/midi/`
 
-## 🚀 Sử dụng
+## 🚀 Sử dụng nhanh với `run.py`
 
-### 1. Xử lý dữ liệu
+`run.py` là entry-point duy nhất ở thư mục AMT; bạn không phải nhớ đường dẫn sâu bên trong `source/`.
+
+| Lệnh | Tác vụ |
+|------|--------|
+| `python run.py pipeline` | Chạy toàn bộ pipeline chuẩn bị dữ liệu (metadata → wiki → embedding → clustering → training JSON). |
+| `python run.py train --epochs 10` | Huấn luyện mô hình, checkpoint lưu vào `models/checkpoints/`. |
+| `python run.py generate -t "Calm piano" -o output/generated/calm.mid -c models/checkpoints/checkpoint_epoch_10.pt` | Sinh nhạc từ mô tả văn bản. |
+| `python run.py evaluate -r data/reference/ref.mid -g output/generated/calm.mid` | Tính bộ metric đánh giá. |
+
+Ví dụ đầy đủ:
 ```bash
-# Thu thập text descriptions
-python source/data_processing/collect_text.py
+# 1. Chuẩn bị dữ liệu
+python run.py pipeline
 
-# Xử lý MIDI files
-python source/data_processing/process_midi.py
+# 2. Huấn luyện
+python run.py train --epochs 5 --batch-size 16
 
-# Xử lý text data
-python source/data_processing/process_text.py
+# 3. Sinh một bản nhạc thử nghiệm
+python run.py generate -t "Energetic rock guitar" -o output/generated/rock.mid -c models/checkpoints/checkpoint_epoch_5.pt
 
-# Chuẩn bị dữ liệu huấn luyện
-python source/data_processing/prepare_training.py
-```
-
-### 2. Phân cụm MIDI files
-```bash
-python source/model/clustering.py
-```
-
-### 3. Huấn luyện model
-```bash
-python source/model/training.py
-```
-
-### 4. Tạo nhạc
-```bash
-python source/model/generation.py
-```
-
-### 5. Đánh giá
-```bash
-python source/evaluation/metrics.py
-```
-
-### 6. Chạy toàn bộ pipeline (End-to-End)
-```bash
-# Pipeline đầy đủ (5 bước: metadata → wiki → embedding → clustering → training data)
-python source/scripts/main.py
+# 4. Đánh giá so với MIDI tham chiếu
+python run.py evaluate -r data/reference/rock_ref.mid -g output/generated/rock.mid
 ```
 
 

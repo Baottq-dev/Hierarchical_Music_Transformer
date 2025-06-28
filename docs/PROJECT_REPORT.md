@@ -115,8 +115,14 @@ pip install -r requirements.txt
 python -m nltk.downloader punkt averaged_perceptron_tagger
 python -m spacy download en_core_web_sm
 
-# Pipeline end-to-end
-python source/scripts/main.py
+# Pipeline end-to-end (chuẩn bị dữ liệu)
+python run.py pipeline
+
+# Huấn luyện
+python run.py train --epochs 5
+
+# Sinh nhạc demo
+python run.py generate -t "Calm piano" -o output/generated/calm.mid -c models/checkpoints/checkpoint_epoch_5.pt
 ```
 
 ## 12. Tài liệu tham khảo

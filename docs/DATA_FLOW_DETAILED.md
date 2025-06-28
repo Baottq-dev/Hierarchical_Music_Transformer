@@ -114,10 +114,10 @@ graph TD
 ```bash
 cd AMT
 # 1–5 trong một lệnh
-python source/scripts/main.py
+python run.py pipeline
 
 # 6 Huấn luyện
-python source/model/training.py
+python run.py train
 
 # 7 Sinh nhạc
 python - <<'PY'

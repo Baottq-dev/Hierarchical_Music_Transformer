@@ -131,7 +131,7 @@ AMT/
 
 6. **Huấn luyện**  
    ```bash
-   python source/model/training.py   # Đọc amt_training_data.json
+   python run.py train               # Đọc amt_training_data.json
    ```
    • Tạo checkpoint `models/checkpoints/checkpoint_epoch_X.pt`.
 
