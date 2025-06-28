@@ -45,10 +45,14 @@ AMT/
 │   └── checkpoints/   # Model checkpoints
 ├── output/
 │   └── generated/     # Generated music
-└── source/            # Source code
+├── docs/              # Tài liệu dự án (.md)
+├── run.py             # CLI chính (pipeline, train, generate, evaluate)
+└── source/            # Source code nội bộ
+    ├── data_collection/
     ├── data_processing/
     ├── model/
     ├── evaluation/
+    ├── utils/
     └── config.py
 ```
 
@@ -81,8 +85,8 @@ AMT/
 
 1. Clone repository:
 ```bash
-git clone https://github.com/yourusername/AMT.git
-cd AMT
+git clone https://github.com/quangbeone/text-to-music.git
+cd text-to-music    # thư mục gốc repo
 ```
 
 2. Tạo môi trường ảo:
