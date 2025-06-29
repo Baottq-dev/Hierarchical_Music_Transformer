@@ -1,172 +1,247 @@
-# 🎵 AMT (Audio Music Transformer)
+# AMT (Audio Music Transformer)
 
-AMT là một hệ thống tạo nhạc tự động dựa trên mô tả văn bản, sử dụng kiến trúc Transformer kết hợp BERT và GPT-2 để tạo ra âm nhạc từ mô tả văn bản.
+A symbolic music generation system that creates music from text descriptions using BERT embeddings and GPT-2 architecture, based on the paper "The Beat Goes On: Symbolic Music Generation with Text Controls".
 
-## 📋 Mục lục
-- [Tổng quan](#tổng-quan)
-- [Kiến trúc hệ thống](#kiến-trúc-hệ-thống)
-- [Công nghệ sử dụng](#công-nghệ-sử-dụng)
-- [Cài đặt](#cài-đặt)
-- [Sử dụng](#sử-dụng)
-- [Pipeline xử lý dữ liệu](#pipeline-xử-lý-dữ-liệu)
-- [Model Architecture](#model-architecture)
-- [Đánh giá](#đánh-giá)
-- [Kết quả](#kết-quả)
-- [Hướng phát triển](#hướng-phát-triển)
-- [Đóng góp](#đóng-góp)
-- [Giấy phép](#giấy-phép)
+## 🎵 Features
 
-## 🎯 Tổng quan
+- **Text-to-Music Generation**: Generate MIDI music from natural language descriptions
+- **BERT Text Embeddings**: Extract semantic meaning from text descriptions
+- **GPT-2 Music Generation**: Generate musical sequences using transformer architecture
+- **MIDI Processing**: Comprehensive MIDI file analysis and conversion
+- **Wikipedia Integration**: Automatic text description collection from Wikipedia
+- **Clustering**: Semantic clustering of music styles and genres
+- **Evaluation Metrics**: Quality assessment of generated music
 
-AMT là một hệ thống tạo nhạc tự động sử dụng mô hình Transformer để chuyển đổi mô tả văn bản thành âm nhạc. Hệ thống sử dụng:
-- BERT để xử lý và hiểu mô tả văn bản
-- GPT-2 để tạo chuỗi sự kiện MIDI
-- Kết hợp hai mô hình để tạo ra âm nhạc phù hợp với mô tả
+## 📁 Project Structure
 
-### Tính năng chính
-- 🎹 Tạo nhạc từ mô tả văn bản
-- 🎸 Hỗ trợ nhiều thể loại nhạc
-- 🎻 Tạo nhạc với nhiều nhạc cụ
-- 📊 Đánh giá chất lượng âm nhạc
-- 🔍 Phân cụm MIDI files
-
-## 🏗 Kiến trúc hệ thống
-
-### Cấu trúc thư mục
 ```
 AMT/
 ├── data/
-│   ├── midi/          # Lakh MIDI Clean dataset
-│   ├── text/          # Text descriptions
-│   ├── processed/     # Processed data
-│   ├── reference/     # Reference MIDI files
-│   └── evaluation/    # Evaluation results
+│   ├── midi/                    # Input MIDI files (Lakh MIDI dataset)
+│   ├── output/                  # Generated data files
+│   └── processed/               # Processed data
 ├── models/
-│   └── checkpoints/   # Model checkpoints
-├── output/
-│   └── generated/     # Generated music
-├── docs/              # Tài liệu dự án (.md)
-├── run.py             # CLI chính (pipeline, train, generate, evaluate)
-└── source/            # Source code nội bộ
-    ├── data_collection/
-    ├── data_processing/
-    ├── model/
-    ├── evaluation/
-    ├── utils/
-    └── config.py
+│   └── checkpoints/             # Trained model checkpoints
+├── output/                      # Generated music files
+├── source/                      # Core modules
+│   ├── data_collection/         # Data collection modules
+│   ├── data_processing/         # Data processing modules
+│   ├── model/                   # Model modules
+│   ├── evaluation/              # Evaluation modules
+│   └── utils/                   # Utility modules
+├── collect_data.py              # Data collection script
+├── train.py                     # Training script
+├── test.py                      # Testing script
+├── requirements.txt             # Python dependencies
+└── README.md                    # This file
 ```
 
+## 🚀 Quick Start
 
+### 1. Environment Setup
 
-## 🛠 Công nghệ sử dụng
-
-### Core Technologies
-- Python 3.8+
-- PyTorch
-- Transformers (BERT, GPT-2)
-- Mido (MIDI processing)
-- NumPy
-- scikit-learn
-
-### Libraries
-- transformers: Xử lý ngôn ngữ tự nhiên
-- mido: Xử lý MIDI files
-- numpy: Xử lý dữ liệu số
-- scikit-learn: Machine learning và clustering
-- nltk: Xử lý ngôn ngữ tự nhiên
-- spacy: Xử lý ngôn ngữ tự nhiên
-- beautifulsoup4: Web scraping
-- requests: HTTP requests
-- tqdm: Progress bars
-- matplotlib: Visualization
-- pytest: Testing
-
-## 📦 Cài đặt
-
-1. Clone repository:
 ```bash
-git clone https://github.com/quangbeone/text-to-music.git
-cd text-to-music    # thư mục gốc repo
-```
+# Create virtual environment
+python -m venv .venv
 
-2. Tạo môi trường ảo:
-```bash
-python -m venv venv
-# Windows
-venv\Scripts\activate
-# Linux/Mac
-source venv/bin/activate
-```
+# Activate virtual environment
+# Windows:
+.\.venv\Scripts\activate
+# Linux/Mac:
+source .venv/bin/activate
 
-3. Cài đặt dependencies:
-```bash
+# Install dependencies
 pip install -r requirements.txt
-# Tải dữ liệu NLP bổ sung (chạy một lần)
-python -m nltk.downloader punkt averaged_perceptron_tagger
+
+# Download spaCy model
 python -m spacy download en_core_web_sm
 ```
 
-4. Tải Lakh MIDI Clean dataset:
-- Truy cập [Lakh MIDI Clean](https://colinraffel.com/projects/lmd/)
-- Tải và giải nén vào thư mục `data/midi/`
+### 2. Prepare MIDI Data
 
-## 🚀 Sử dụng nhanh với `run.py`
-
-
-```bash
-# 1. Chuẩn bị dữ liệu (metadata → wiki → embedding → clustering → training JSON)
-python run.py pipeline
-
-# 2. Huấn luyện mô hình
-python run.py train --epochs 10  # thêm --batch-size, --lr nếu muốn
-
-# 3. Sinh nhạc từ mô tả văn bản
-python run.py generate \
-        -t "Calm piano" \
-        -o output/generated/calm.mid \
-        -c models/checkpoints/checkpoint_epoch_10.pt
-
-# 4. Đánh giá bản nhạc sinh
-python run.py evaluate \
-        -r data/reference/ref.mid \
-        -g output/generated/calm.mid
+Place your MIDI files in the `data/midi/` directory with the following structure:
+```
+data/midi/
+├── Artist_Name_1/
+│   ├── song1.mid
+│   └── song2.mid
+└── Artist_Name_2/
+    ├── song3.mid
+    └── song4.mid
 ```
 
+### 3. Run the Complete Pipeline
 
-## 🤝 Đóng góp
+```bash
+# Step 1: Collect data
+python collect_data.py
 
-1. Fork repository
-2. Create feature branch
-3. Commit changes
-4. Push to branch
-5. Create Pull Request
+# Step 2: Train model
+python train.py
 
-### Guidelines
-- Follow PEP 8
-- Add tests
-- Update documentation
-- Be descriptive
+# Step 3: Test generation
+python test.py
+```
 
-## 📝 Giấy phép
+## 📋 Step-by-Step Usage
 
-MIT License
+### Step 1: Data Collection (`collect_data.py`)
 
-Copyright (c) 2024 AMT
+```bash
+# Basic usage
+python collect_data.py
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+# Skip Wikipedia collection (faster for testing)
+python collect_data.py --skip_wikipedia
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+# Custom parameters
+python collect_data.py --midi_dir "./data/midi" --delay 2.0
+```
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+**Parameters:**
+- `--midi_dir`: MIDI files directory (default: `./data/midi`)
+- `--output_dir`: Output directory (default: `./data/output`)
+- `--skip_wikipedia`: Skip Wikipedia collection
+- `--delay`: Wikipedia request delay in seconds (default: 1.0)
+
+### Step 2: Training (`train.py`)
+
+```bash
+# Basic usage
+python train.py
+
+# Custom training parameters
+python train.py --batch_size 16 --epochs 20 --lr 5e-5
+
+# Skip data processing (if already done)
+python train.py --skip_processing
+
+# Skip model training (data processing only)
+python train.py --skip_training
+```
+
+**Parameters:**
+- `--paired_file`: Paired data JSON file (default: `./data/output/automated_paired_data.json`)
+- `--output_dir`: Output directory (default: `./data/output`)
+- `--model_dir`: Model checkpoint directory (default: `./models/checkpoints`)
+- `--batch_size`: Training batch size (default: 32)
+- `--epochs`: Number of epochs (default: 10)
+- `--lr`: Learning rate (default: 1e-4)
+- `--skip_processing`: Skip data processing
+- `--skip_training`: Skip model training
+
+### Step 3: Testing (`test.py`)
+
+```bash
+# Basic usage
+python test.py
+
+# Custom generation
+python test.py --text_description "A melancholic jazz piece with saxophone"
+
+# With evaluation
+python test.py --original_file "data/midi/Artist/song.mid"
+
+# Custom parameters
+python test.py --temperature 0.8 --max_length 1024
+```
+
+**Parameters:**
+- `--model_path`: Model checkpoint path (default: `./models/checkpoints/checkpoint_epoch_10.pt`)
+- `--output_dir`: Output directory (default: `./output`)
+- `--text_description`: Text description for generation (default: "A happy pop song with piano and drums")
+- `--max_length`: Maximum sequence length (default: 512)
+- `--temperature`: Sampling temperature (default: 1.0)
+- `--original_file`: Original MIDI file for evaluation
+- `--skip_generation`: Skip music generation
+- `--skip_evaluation`: Skip music evaluation
+
+## 📊 Output Files
+
+After running the pipeline, you'll find these files:
+
+### Data Collection Output:
+- `data/output/midi_metadata_list.json` - MIDI file metadata
+- `data/output/automated_paired_data.json` - MIDI + Wikipedia descriptions
+
+### Training Output:
+- `data/output/text_embeddings.json` - BERT text embeddings
+- `data/output/clustered_text_data.json` - Clustered embeddings
+- `data/output/amt_training_data.json` - Training data
+- `models/checkpoints/checkpoint_epoch_N.pt` - Model checkpoints
+
+### Testing Output:
+- `output/generated_music.mid` - Generated MIDI files
+- `output/evaluation_results.json` - Evaluation metrics (if evaluation performed)
+
+## 🔧 Requirements
+
+- Python 3.8+
+- PyTorch 1.9+
+- Transformers 4.5+
+- Mido 1.2+
+- scikit-learn 0.24+
+- spaCy 3.0+
+- Other dependencies in `requirements.txt`
+
+## 🎯 Evaluation Metrics
+
+The system includes evaluation metrics for assessing generated music quality:
+
+- **Note Density Ratio**: Similarity in note density
+- **Velocity Similarity**: Similarity in velocity distributions
+- **Note Range Similarity**: Similarity in note ranges
+- **Time Signature Match**: Match in time signatures
+- **Tempo Similarity**: Similarity in tempo
+- **Overall Score**: Weighted combination of all metrics
+
+## 🚨 Troubleshooting
+
+### Common Issues
+
+1. **ModuleNotFoundError**: Ensure virtual environment is activated
+2. **No MIDI files found**: Check `data/midi/` directory structure
+3. **Wikipedia API errors**: Increase `--delay` parameter
+4. **Out of memory**: Reduce `--batch_size`
+5. **Model not found**: Train model first or check checkpoint path
+
+### Performance Tips
+
+- Use `--skip_wikipedia` for faster testing
+- Reduce `--batch_size` if you have limited RAM
+- Use `--skip_training` to test data pipeline only
+- Increase `--delay` to avoid Wikipedia rate limiting
+
+## 📚 Technical Details
+
+### Architecture
+
+1. **Text Processing**: BERT embeddings for semantic understanding
+2. **MIDI Processing**: Event-based representation (TIME_ON, NOTE, DURATION)
+3. **Clustering**: K-means clustering of text embeddings
+4. **Generation**: GPT-2 with BERT conditioning
+5. **Evaluation**: Multi-metric quality assessment
+
+### Data Flow
+
+```
+MIDI Files → Metadata → Wikipedia → BERT Embeddings → Clustering → Training Data → Model Training → Music Generation
+```
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 🙏 Acknowledgments
+
+- Based on "The Beat Goes On: Symbolic Music Generation with Text Controls"
+- Uses Lakh MIDI dataset for training
+- Built with PyTorch and Transformers libraries

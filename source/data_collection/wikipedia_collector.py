@@ -85,7 +85,8 @@ def pair_midi_with_wikipedia(metadata_file, output_file, request_delay=1):
 
     automated_paired_data = []
     print(f"Starting automated pairing for {len(midi_metadata)} MIDI files...")
-
+    
+    # midi_metadata_processed = midi_metadata[:10]
     for i, item in enumerate(midi_metadata):
         file_path = item.get("file_path")
         artist = item.get("artist")

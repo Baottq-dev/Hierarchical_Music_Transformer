@@ -139,12 +139,16 @@ class MIDIClusterer:
         # Analyze MIDI file
         analysis = analyze_midi_file(midi_file)
         
-        # Extract features
+        # Calculate note range width (max - min)
+        note_range_width = 0
+        if analysis["note_range"]["max"] >= analysis["note_range"]["min"]:
+            note_range_width = analysis["note_range"]["max"] - analysis["note_range"]["min"]
+
         features = [
             analysis["note_density"],
             analysis["velocity_mean"],
             analysis["velocity_std"],
-            analysis["note_range"],
+            note_range_width,
             analysis["tempo_mean"],
             analysis["tempo_std"]
         ]

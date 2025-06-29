@@ -2,9 +2,5 @@
 AMT (Audio Music Transformer) package.
 """
 
-from . import data_processing
-from . import model
-from . import evaluation
-from . import config
-
+# Don't import modules here to avoid circular imports
 __all__ = ['data_processing', 'model', 'evaluation', 'config'] 

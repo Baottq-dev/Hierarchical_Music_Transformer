@@ -54,6 +54,8 @@ def prepare_training_data(clustered_data_path, output_path):
         
         combined_sequence = [semantic_token_str] + midi_event_sequence
         
+        # The clustered data contains original embedding under 'embedding'
+        text_embedding = item.get("embedding")
         training_item = {
             "file_path": midi_file_path,
             "artist": item.get("artist", ""),
@@ -61,8 +63,12 @@ def prepare_training_data(clustered_data_path, output_path):
             "text_description": item.get("text_description", ""),
             "semantic_token_id": semantic_token_id,
             "semantic_token_str": semantic_token_str,
-            "midi_event_sequence": midi_event_sequence,
-            "combined_sequence_for_amt": combined_sequence
+            # Keys expected by training.py
+            "text_embedding": text_embedding if text_embedding is not None else [],
+            "event_sequence": midi_event_sequence,
+            # Additional fields for analysis/debugging
+            "combined_sequence_for_amt": combined_sequence,
+            "midi_event_sequence": midi_event_sequence
         }
         amt_training_data.append(training_item)
         processed_count += 1
