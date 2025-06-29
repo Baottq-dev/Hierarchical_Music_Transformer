@@ -10,6 +10,16 @@ DATA_DIR = "data"
 MIDI_DIR = os.path.join(DATA_DIR, "midi")
 TEXT_DIR = os.path.join(DATA_DIR, "text")
 PROCESSED_DIR = os.path.join(DATA_DIR, "processed")
+OUTPUT_DIR = os.path.join(DATA_DIR, "output")
+REFERENCE_DIR = os.path.join(DATA_DIR, "reference")
+EVALUATION_DIR = os.path.join(DATA_DIR, "evaluation")
+
+# Output files
+PAIRED_DATA_FILE = os.path.join(OUTPUT_DIR, "automated_paired_data.json")
+MIDI_METADATA_FILE = os.path.join(OUTPUT_DIR, "midi_metadata_list.json")
+TEXT_EMBEDDINGS_FILE = os.path.join(OUTPUT_DIR, "text_embeddings.json")
+CLUSTERED_DATA_FILE = os.path.join(OUTPUT_DIR, "clustered_text_data.json")
+TRAINING_DATA_FILE = os.path.join(OUTPUT_DIR, "amt_training_data.json")
 
 # Model paths
 MODEL_DIR = "models"
@@ -94,8 +104,8 @@ EVALUATION_CONFIG = {
         "time_signature_match",
         "tempo_similarity"
     ],
-    "reference_dir": os.path.join(DATA_DIR, "reference"),
-    "output_dir": os.path.join(DATA_DIR, "evaluation")
+    "reference_dir": REFERENCE_DIR,
+    "output_dir": EVALUATION_DIR
 }
 
 def get_config() -> Dict[str, Any]:

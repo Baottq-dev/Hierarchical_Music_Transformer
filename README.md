@@ -11,6 +11,7 @@ A symbolic music generation system that creates music from text descriptions usi
 - **Wikipedia Integration**: Automatic text description collection from Wikipedia
 - **Clustering**: Semantic clustering of music styles and genres
 - **Evaluation Metrics**: Quality assessment of generated music
+- **Unified Pipeline**: Single command to run complete pipeline
 
 ## 📁 Project Structure
 
@@ -19,19 +20,32 @@ AMT/
 ├── data/
 │   ├── midi/                    # Input MIDI files (Lakh MIDI dataset)
 │   ├── output/                  # Generated data files
-│   └── processed/               # Processed data
+│   ├── processed/               # Processed data
+│   ├── reference/               # Reference MIDI files for evaluation
+│   └── evaluation/              # Evaluation results
 ├── models/
 │   └── checkpoints/             # Trained model checkpoints
-├── output/                      # Generated music files
 ├── source/                      # Core modules
 │   ├── data_collection/         # Data collection modules
+│   │   ├── midi_metadata.py     # MIDI file scanning and metadata extraction
+│   │   └── wikipedia_collector.py # Wikipedia text collection
 │   ├── data_processing/         # Data processing modules
+│   │   ├── midi_processor.py    # MIDI to event sequence conversion
+│   │   ├── text_processor.py    # Text cleaning and BERT embeddings
+│   │   ├── process_data.py      # Main data processing pipeline
+│   │   └── prepare_training_data.py # Training data preparation
 │   ├── model/                   # Model modules
+│   │   ├── training.py          # GPT-2 model training
+│   │   ├── generation.py        # Music generation
+│   │   └── clustering.py        # K-means clustering
 │   ├── evaluation/              # Evaluation modules
-│   └── utils/                   # Utility modules
+│   │   └── metrics.py           # Music quality evaluation metrics
+│   ├── utils/                   # Utility modules
+│   │   ├── data_preparation.py  # Training data preparation utilities
+│   │   └── environment.py       # Environment verification
+│   └── config.py                # Configuration parameters
+├── main.py                      # Main pipeline controller
 ├── collect_data.py              # Data collection script
-├── train.py                     # Training script
-├── test.py                      # Testing script
 ├── requirements.txt             # Python dependencies
 └── README.md                    # This file
 ```
@@ -73,88 +87,141 @@ data/midi/
 ### 3. Run the Complete Pipeline
 
 ```bash
-# Step 1: Collect data
-python collect_data.py
+# Run all steps at once
+python main.py
 
-# Step 2: Train model
-python train.py
-
-# Step 3: Test generation
-python test.py
+# Or run step by step
+python main.py collect
+python main.py process
+python main.py prepare
+python main.py train
+python main.py generate
+python main.py evaluate
 ```
+
+## 📋 Pipeline Usage
+
+### Main Pipeline Controller (`main.py`)
+
+The `main.py` file provides a unified interface to control the entire AMT pipeline:
+
+```bash
+# Run complete pipeline
+python main.py
+
+# Run specific steps
+python main.py collect process prepare
+python main.py train generate
+python main.py evaluate
+
+# List all available steps
+python main.py --list-steps
+
+# Check dependencies
+python main.py --check-deps
+
+# Get help
+python main.py --help
+```
+
+### Pipeline Steps
+
+| Step | Description | Output Files |
+|------|-------------|--------------|
+| **collect** | Collect MIDI metadata and Wikipedia descriptions | `data/output/midi_metadata_list.json`, `data/output/automated_paired_data.json` |
+| **process** | Process text embeddings and perform clustering | `data/output/text_embeddings.json`, `data/output/clustered_text_data.json` |
+| **prepare** | Prepare training data from MIDI and embeddings | `data/output/amt_training_data.json` |
+| **train** | Train GPT-2 model with MIDI sequences | `models/checkpoints/checkpoint_epoch_N.pt` |
+| **generate** | Generate music from text descriptions | `output/generated_music.mid` |
+| **evaluate** | Evaluate generated music quality | `data/evaluation/results.json` |
 
 ## 📋 Step-by-Step Usage
 
-### Step 1: Data Collection (`collect_data.py`)
+### Step 1: Data Collection (`collect`)
 
 ```bash
-# Basic usage
-python collect_data.py
+# Using main.py
+python main.py collect
 
-# Skip Wikipedia collection (faster for testing)
-python collect_data.py --skip_wikipedia
-
-# Custom parameters
+# Or directly
 python collect_data.py --midi_dir "./data/midi" --delay 2.0
 ```
 
 **Parameters:**
 - `--midi_dir`: MIDI files directory (default: `./data/midi`)
 - `--output_dir`: Output directory (default: `./data/output`)
-- `--skip_wikipedia`: Skip Wikipedia collection
 - `--delay`: Wikipedia request delay in seconds (default: 1.0)
 
-### Step 2: Training (`train.py`)
+### Step 2: Data Processing (`process`)
 
 ```bash
-# Basic usage
-python train.py
+# Using main.py
+python main.py process
 
-# Custom training parameters
-python train.py --batch_size 16 --epochs 20 --lr 5e-5
+# Or directly
+python source/data_processing/process_data.py
+```
 
-# Skip data processing (if already done)
-python train.py --skip_processing
+**Output:**
+- `data/output/text_embeddings.json` - BERT text embeddings
+- `data/output/clustered_text_data.json` - Clustered embeddings
 
-# Skip model training (data processing only)
-python train.py --skip_training
+### Step 3: Training Data Preparation (`prepare`)
+
+```bash
+# Using main.py
+python main.py prepare
+
+# Or directly
+python source/data_processing/prepare_training_data.py
+```
+
+**Output:**
+- `data/output/amt_training_data.json` - Training data for model
+
+### Step 4: Model Training (`train`)
+
+```bash
+# Using main.py
+python main.py train
+
+# Or directly
+python source/model/training.py
 ```
 
 **Parameters:**
-- `--paired_file`: Paired data JSON file (default: `./data/output/automated_paired_data.json`)
-- `--output_dir`: Output directory (default: `./data/output`)
-- `--model_dir`: Model checkpoint directory (default: `./models/checkpoints`)
 - `--batch_size`: Training batch size (default: 32)
 - `--epochs`: Number of epochs (default: 10)
 - `--lr`: Learning rate (default: 1e-4)
-- `--skip_processing`: Skip data processing
-- `--skip_training`: Skip model training
 
-### Step 3: Testing (`test.py`)
+**Output:**
+- `models/checkpoints/checkpoint_epoch_N.pt` - Model checkpoints
+
+### Step 5: Music Generation (`generate`)
 
 ```bash
-# Basic usage
-python test.py
+# Using main.py
+python main.py generate
 
-# Custom generation
-python test.py --text_description "A melancholic jazz piece with saxophone"
-
-# With evaluation
-python test.py --original_file "data/midi/Artist/song.mid"
-
-# Custom parameters
-python test.py --temperature 0.8 --max_length 1024
+# Or directly
+python source/model/generation.py
 ```
 
 **Parameters:**
-- `--model_path`: Model checkpoint path (default: `./models/checkpoints/checkpoint_epoch_10.pt`)
-- `--output_dir`: Output directory (default: `./output`)
-- `--text_description`: Text description for generation (default: "A happy pop song with piano and drums")
-- `--max_length`: Maximum sequence length (default: 512)
+- `--text_description`: Text description for generation
+- `--output_file`: Output MIDI file path
 - `--temperature`: Sampling temperature (default: 1.0)
-- `--original_file`: Original MIDI file for evaluation
-- `--skip_generation`: Skip music generation
-- `--skip_evaluation`: Skip music evaluation
+- `--max_length`: Maximum sequence length (default: 512)
+
+### Step 6: Evaluation (`evaluate`)
+
+```bash
+# Using main.py
+python main.py evaluate
+
+# Or directly
+python source/evaluation/metrics.py
+```
 
 ## 📊 Output Files
 
@@ -164,15 +231,17 @@ After running the pipeline, you'll find these files:
 - `data/output/midi_metadata_list.json` - MIDI file metadata
 - `data/output/automated_paired_data.json` - MIDI + Wikipedia descriptions
 
-### Training Output:
+### Data Processing Output:
 - `data/output/text_embeddings.json` - BERT text embeddings
 - `data/output/clustered_text_data.json` - Clustered embeddings
 - `data/output/amt_training_data.json` - Training data
-- `models/checkpoints/checkpoint_epoch_N.pt` - Model checkpoints
 
-### Testing Output:
+### Model Output:
+- `models/checkpoints/checkpoint_epoch_N.pt` - Model checkpoints
 - `output/generated_music.mid` - Generated MIDI files
-- `output/evaluation_results.json` - Evaluation metrics (if evaluation performed)
+
+### Evaluation Output:
+- `data/evaluation/results.json` - Evaluation metrics and scores
 
 ## 🔧 Requirements
 
@@ -209,8 +278,24 @@ The system includes evaluation metrics for assessing generated music quality:
 
 - Use `--skip_wikipedia` for faster testing
 - Reduce `--batch_size` if you have limited RAM
-- Use `--skip_training` to test data pipeline only
 - Increase `--delay` to avoid Wikipedia rate limiting
+- Use `python main.py --check-deps` to verify dependencies
+
+### Quick Commands
+
+```bash
+# Check if everything is set up correctly
+python main.py --check-deps
+
+# Run a quick test with just data collection
+python main.py collect
+
+# Run processing and training only
+python main.py process prepare train
+
+# Generate music with custom parameters
+python main.py generate --text_description "A happy jazz piece"
+```
 
 ## 📚 Technical Details
 
@@ -225,7 +310,7 @@ The system includes evaluation metrics for assessing generated music quality:
 ### Data Flow
 
 ```
-MIDI Files → Metadata → Wikipedia → BERT Embeddings → Clustering → Training Data → Model Training → Music Generation
+MIDI Files → Metadata → Wikipedia → BERT Embeddings → Clustering → Training Data → Model Training → Music Generation → Evaluation
 ```
 
 ## 🤝 Contributing
