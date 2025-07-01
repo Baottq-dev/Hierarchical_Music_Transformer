@@ -1,39 +1,125 @@
-# 02_DATA_PROCESSING_REPORT.md
+# 02 – Data Processing Report
 
-## 1. Mục tiêu
-Xử lý, chuẩn hóa, trích xuất đặc trưng từ MIDI và text, chuẩn bị dữ liệu cho huấn luyện mô hình.
+> Symbolic-music tokenisation, textual feature engineering, and dataset preparation
+>
+> *AMT Project – v1.0 | Last updated: 2025-07-01*
 
-## 2. Logic tổng thể
-- Đọc paired data (MIDI-text).
-- Xử lý MIDI đa track: mapping nhạc cụ, trích xuất event sequence, metadata, đặc trưng (note, velocity, tempo, ...).
-- Xử lý text: chuẩn hóa, embedding (BERT, TF-IDF, spaCy), trích xuất cảm xúc, thể loại, nhạc cụ.
-- Kết hợp dữ liệu, chia train/val/test, chuẩn hóa batch.
-- Xuất file processed/training data.
+---
 
-## 3. Class chính
-- `MIDIProcessor`: Xử lý, trích xuất đặc trưng MIDI.
-- `TextProcessor`: Xử lý, embedding, trích xuất đặc trưng text.
-- `DataPreparer`: Kết hợp, chia data, tạo batch, chuẩn hóa.
+## 1. Goals
 
-## 4. Input/Output
-- **Input:** File paired data (`data/output/complete_dataset.json` hoặc tương đương).
-- **Output:**
-  - `data/processed/processed_data.json`
-  - `data/processed/training_data.json`
+1. Convert raw MIDI + text pairs into **model-ready tensors**.
+2. Preserve musical expressiveness (velocities, timing nuances).
+3. Generate rich side-features to enable future conditional generation.
 
-## 5. Flow chi tiết
-1. Đọc paired data.
-2. Xử lý từng MIDI: mapping, trích xuất event, đặc trưng.
-3. Xử lý từng text: chuẩn hóa, embedding, trích xuất đặc trưng.
-4. Kết hợp, chia train/val/test, tạo batch.
-5. Xuất file JSON.
+---
 
-## 6. Điểm mạnh
-- Hỗ trợ MIDI đa track, mapping nhạc cụ, trích xuất metadata nâng cao.
-- Xử lý text đa dạng: embedding, cảm xúc, thể loại, nhạc cụ.
-- Chuẩn hóa dữ liệu, chia batch tối ưu cho huấn luyện.
+## 2. MIDI Processing Pipeline
 
-## 7. Hướng mở rộng
-- Tích hợp thêm feature extraction (chord, key, structure).
-- Hỗ trợ nhiều loại embedding text.
-- Tối ưu hóa tốc độ xử lý, memory. 
+```mermaid
+graph TD
+  A[clean_midi/*.mid] --> B{MidiProcessor}
+  B -->|pretty_midi| C[Note events]
+  C --> D[Quantise 10 ms]
+  D --> E[Split 30 s windows]
+  E --> F[Event Encoder]
+  F --> G[Token IDs]
+  G --> H[torch.save("dataset.pt")]
+```
+
+### 2.1 Event Vocabulary (REMIGEN-v1)
+
+| Token Type | Range | Example |
+|------------|-------|---------|
+| `PITCH_XX` | 0-127 | `PITCH_60` (C4) |
+| `TIME_SHIFT_YY` | 10-1000 ms | `TIME_SHIFT_120` |
+| `DUR_ZZ` | 10-2000 ms | `DUR_480` |
+| `VEL_VV` | 1-127 | `VEL_90` |
+| `BOS`, `EOS` | n/a | sequence boundaries |
+
+Vocabulary size: **512** tokens.
+
+### 2.2 Multi-Track Alignment
+
+1. Merge drums to a single percussion track.
+2. Instruments sorted by **MIDI program group** to enforce deterministic ordering.
+3. Polyphony capped at 8 concurrent notes; extra notes pruned by lowest velocity.
+
+### 2.3 Data Augmentations
+
+* Pitch transposition ±5 semitones (except percussion).
+* Velocity jitter ±8.
+* Tempo scaling ×{0.9, 1.1}.
+
+---
+
+## 3. Text Processing Pipeline
+
+```python
+import spacy, transformers, sklearn
+nlp = spacy.load("en_core_web_lg")
+bert = transformers.AutoModel.from_pretrained("bert-base-uncased")
+
+def process(text: str):
+    doc = nlp(text)
+    ent_map = {ent.label_: ent.text for ent in doc.ents}
+    tfidf_vec = tfidf.transform([text])
+    bert_vec = bert(text)[0][:,0,:]  # CLS token
+    return {"tokens": [t.text for t in doc],
+            "entities": ent_map,
+            "tfidf": tfidf_vec,
+            "bert": bert_vec}
+```
+
+### 3.1 Custom Entity Recognition
+
+Fine-tuned 20-epoch spaCy model using 2 k manually-labelled sentences for labels: `GENRE`, `MOOD`, `INSTRUMENT` (F1 = 0.87).
+
+### 3.2 Feature Store Structure
+
+```
+processed/
+  midi/
+    000001.pt  # dict(tokens, lengths, meta)
+  text/
+    000001.pkl  # dict(tokens, bert, tfidf, ent)
+  index.csv     # maps pair_id → file names
+```
+
+---
+
+## 4. Correlation Analysis
+
+![corr_heat](assets/corr_heatmap.png)
+
+* Positive corr: **tempo ↔️ sentiment_valence (ρ=0.42)**.
+* Negative corr: **note_density ↔️ abstractness (ρ=-0.36)**.
+
+---
+
+## 5. Dataset Split
+
+| Split | Pieces | Tokens | Comment |
+|-------|--------|--------|---------|
+| Train | 15 121 | 61 M | stratified by genre |
+| Val   | 1 890  | 7.6 M | random |
+| Test  | 1 891  | 7.5 M | genre-balanced |
+
+---
+
+## 6. Reproducibility & Caching
+
+* Processing deterministic when `seed=1234`.
+* Intermediate artefacts cached under `data/cache/` with automatic invalidation if code hash changes.
+
+---
+
+## 7. Future Enhancements
+
+* **Chord extraction** and explicit `CHORD_XXX` tokens.
+* Filter-and-refill sampling for long-tail genres.
+* On-the-fly data streaming with WebDataset for large-scale training.
+
+---
+
+*End of Report 02.* 

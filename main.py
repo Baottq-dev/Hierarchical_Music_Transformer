@@ -1,10 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-AMT (Audio Music Transformer) Pipeline - Main Entry Point
-Clean modular structure: collect, process, train, test
-"""
-
 import argparse
 import sys
 import os
