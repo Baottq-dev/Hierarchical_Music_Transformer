@@ -1,14 +1,9 @@
 # Core dependencies
-torch>=1.9.0
-transformers>=4.5.0
 numpy>=1.19.0
-scikit-learn>=0.24.0
 tqdm>=4.60.0
 
 # Music processing
 mido>=1.2.0
-pretty_midi>=0.2.9
-librosa>=0.8.0
 
 # Text processing
 spacy>=3.0.0

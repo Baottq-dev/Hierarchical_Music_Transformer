@@ -3,7 +3,7 @@ Configuration module for AMT.
 """
 
 import os
-from typing import Dict, Any
+from typing import Any, Dict
 
 # Data paths
 DATA_DIR = "data"
@@ -28,51 +28,89 @@ CHECKPOINT_DIR = os.path.join(MODEL_DIR, "checkpoints")
 # Data processing
 MIDI_CONFIG = {
     "time_resolution": 480,  # ticks per quarter note
-    "max_time_shift": 512,   # maximum time shift in ticks
-    "velocity_bins": 32,     # number of velocity bins
+    "max_time_shift": 512,  # maximum time shift in ticks
+    "velocity_bins": 32,  # number of velocity bins
     "midi_programs": {
-        'piano': 0,
-        'guitar': 24,
-        'violin': 40,
-        'drums': 0,  # Channel 10
-        'bass': 33,
-        'saxophone': 66,
-        'trumpet': 56,
-        'flute': 73,
-        'clarinet': 71,
-        'cello': 42,
-        'viola': 41,
-        'trombone': 57,
-        'organ': 19,
-        'synth': 80
-    }
+        "piano": 0,
+        "guitar": 24,
+        "violin": 40,
+        "drums": 0,  # Channel 10
+        "bass": 33,
+        "saxophone": 66,
+        "trumpet": 56,
+        "flute": 73,
+        "clarinet": 71,
+        "cello": 42,
+        "viola": 41,
+        "trombone": 57,
+        "organ": 19,
+        "synth": 80,
+    },
 }
 
 TEXT_CONFIG = {
     "max_length": 512,
     "music_genres": {
-        'rock', 'pop', 'jazz', 'classical', 'electronic', 'hip hop', 'r&b', 'blues',
-        'country', 'folk', 'metal', 'punk', 'reggae', 'soul', 'funk', 'disco'
+        "rock",
+        "pop",
+        "jazz",
+        "classical",
+        "electronic",
+        "hip hop",
+        "r&b",
+        "blues",
+        "country",
+        "folk",
+        "metal",
+        "punk",
+        "reggae",
+        "soul",
+        "funk",
+        "disco",
     },
     "music_instruments": {
-        'piano', 'guitar', 'drums', 'bass', 'violin', 'saxophone', 'trumpet',
-        'flute', 'clarinet', 'cello', 'viola', 'trombone', 'organ', 'synth'
+        "piano",
+        "guitar",
+        "drums",
+        "bass",
+        "violin",
+        "saxophone",
+        "trumpet",
+        "flute",
+        "clarinet",
+        "cello",
+        "viola",
+        "trombone",
+        "organ",
+        "synth",
     },
     "music_emotions": {
-        'happy', 'sad', 'energetic', 'calm', 'angry', 'peaceful', 'melancholic',
-        'joyful', 'dark', 'bright', 'intense', 'soft', 'loud', 'gentle'
-    }
+        "happy",
+        "sad",
+        "energetic",
+        "calm",
+        "angry",
+        "peaceful",
+        "melancholic",
+        "joyful",
+        "dark",
+        "bright",
+        "intense",
+        "soft",
+        "loud",
+        "gentle",
+    },
 }
 
 # Model configuration
 MODEL_CONFIG = {
-    "embedding_dim": 768,    # BERT embedding dimension
-    "hidden_dim": 1024,      # GPT-2 hidden dimension
-    "vocab_size": 512,       # MIDI event vocabulary size
+    "embedding_dim": 768,  # BERT embedding dimension
+    "hidden_dim": 1024,  # GPT-2 hidden dimension
+    "vocab_size": 512,  # MIDI event vocabulary size
     "max_seq_length": 1024,  # Maximum sequence length
-    "num_layers": 6,         # Number of transformer layers
-    "num_heads": 8,          # Number of attention heads
-    "dropout": 0.1           # Dropout rate
+    "num_layers": 6,  # Number of transformer layers
+    "num_heads": 8,  # Number of attention heads
+    "dropout": 0.1,  # Dropout rate
 }
 
 # Training configuration
@@ -83,7 +121,7 @@ TRAINING_CONFIG = {
     "warmup_steps": 1000,
     "max_grad_norm": 1.0,
     "save_steps": 1000,
-    "eval_steps": 1000
+    "eval_steps": 1000,
 }
 
 # Generation configuration
@@ -92,7 +130,7 @@ GENERATION_CONFIG = {
     "temperature": 0.7,
     "top_k": 50,
     "top_p": 0.9,
-    "num_return_sequences": 1
+    "num_return_sequences": 1,
 }
 
 # Evaluation configuration
@@ -102,11 +140,12 @@ EVALUATION_CONFIG = {
         "velocity_similarity",
         "note_range_similarity",
         "time_signature_match",
-        "tempo_similarity"
+        "tempo_similarity",
     ],
     "reference_dir": REFERENCE_DIR,
-    "output_dir": EVALUATION_DIR
+    "output_dir": EVALUATION_DIR,
 }
+
 
 def get_config() -> Dict[str, Any]:
     """
@@ -115,12 +154,9 @@ def get_config() -> Dict[str, Any]:
         Dictionary containing all configuration
     """
     return {
-        "data": {
-            "midi": MIDI_CONFIG,
-            "text": TEXT_CONFIG
-        },
+        "data": {"midi": MIDI_CONFIG, "text": TEXT_CONFIG},
         "model": MODEL_CONFIG,
         "training": TRAINING_CONFIG,
         "generation": GENERATION_CONFIG,
-        "evaluation": EVALUATION_CONFIG
-    } 
+        "evaluation": EVALUATION_CONFIG,
+    }

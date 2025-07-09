@@ -7,8 +7,4 @@ from .evaluator import ModelEvaluator
 from .metrics import EvaluationMetrics
 from .tester import ModelTester
 
-__all__ = [
-    'ModelEvaluator',
-    'EvaluationMetrics',
-    'ModelTester'
-] 
+__all__ = ["ModelEvaluator", "EvaluationMetrics", "ModelTester"]

@@ -1,239 +1,287 @@
 """
-Data Preparer - Prepares training data from processed MIDI and text
+Data Preparer - Prepares data for training
 """
 
 import json
 import os
+from typing import Any, Dict, List, Tuple
+
 import numpy as np
 import torch
-from typing import List, Dict, Any, Tuple, Optional
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader, Dataset
+
 from .midi_processor import MIDIProcessor
 from .text_processor import TextProcessor
 
+
 class MusicTextDataset(Dataset):
-    """Dataset for music-text pairs."""
-    
-    def __init__(self, data: List[Dict[str, Any]], 
-                 max_sequence_length: int = 1024,
-                 max_text_length: int = 512):
+    """Dataset for music and text data."""
+
+    def __init__(self, data: List[Dict[str, Any]], max_sequence_length: int, max_text_length: int):
         self.data = data
         self.max_sequence_length = max_sequence_length
         self.max_text_length = max_text_length
-    
-    def __len__(self):
+
+    def __len__(self) -> int:
         return len(self.data)
-    
-    def __getitem__(self, idx):
+
+    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         item = self.data[idx]
-        
-        # Get MIDI tokens
-        midi_tokens = item.get('midi_tokens', [])
-        if len(midi_tokens) > self.max_sequence_length:
-            midi_tokens = midi_tokens[:self.max_sequence_length]
-        
-        # Pad MIDI tokens
-        midi_tokens = midi_tokens + [0] * (self.max_sequence_length - len(midi_tokens))
-        
-        # Get text features
-        text_features = item.get('text_features', {})
-        bert_embedding = text_features.get('bert_embedding', [])
-        tfidf_features = text_features.get('tfidf_features', [])
-        
-        # Pad text features
-        if len(bert_embedding) > self.max_text_length:
-            bert_embedding = bert_embedding[:self.max_text_length]
+
+        # Get tokens
+        tokens = item["midi_tokens"]
+        if isinstance(tokens, list):
+            tokens = np.array(tokens)
+
+        # Pad or truncate sequence
+        if len(tokens) > self.max_sequence_length:
+            tokens = tokens[: self.max_sequence_length]
         else:
-            bert_embedding = bert_embedding + [0] * (self.max_text_length - len(bert_embedding))
-        
-        if len(tfidf_features) > 1000:
-            tfidf_features = tfidf_features[:1000]
-        else:
-            tfidf_features = tfidf_features + [0] * (1000 - len(tfidf_features))
-        
+            tokens = np.pad(tokens, (0, self.max_sequence_length - len(tokens)), "constant")
+
+        # Extract BERT and TF-IDF embeddings from the stored text_features dict
+        text_data = item["text_features"]
+
+        # Default placeholders
+        bert_emb = np.zeros(768, dtype=np.float32)
+        tfidf_feat = np.zeros(768, dtype=np.float32)
+
+        if isinstance(text_data, dict):
+            # BERT embedding
+            if text_data.get("bert_embedding") is not None:
+                bert_arr = np.array(text_data["bert_embedding"], dtype=np.float32)
+                if bert_arr.shape[0] >= 768:
+                    bert_emb = bert_arr[:768]
+                else:
+                    bert_emb[: bert_arr.shape[0]] = bert_arr
+
+            # TF-IDF features (original length = 1000) – down-sample / pad to 768
+            if text_data.get("tfidf_features") is not None:
+                tfidf_arr = np.array(text_data["tfidf_features"], dtype=np.float32)
+                if tfidf_arr.shape[0] >= 768:
+                    tfidf_feat = tfidf_arr[:768]
+                else:
+                    tfidf_feat[: tfidf_arr.shape[0]] = tfidf_arr
+        elif isinstance(text_data, list):
+            # Fallback: treat list as generic embedding, truncate / pad to 768
+            generic_arr = np.array(text_data, dtype=np.float32)
+            if generic_arr.shape[0] >= 768:
+                bert_emb = generic_arr[:768]
+            else:
+                bert_emb[: generic_arr.shape[0]] = generic_arr
+
         return {
-            'midi_tokens': torch.tensor(midi_tokens, dtype=torch.long),
-            'bert_embedding': torch.tensor(bert_embedding, dtype=torch.float),
-            'tfidf_features': torch.tensor(tfidf_features, dtype=torch.float),
-            'musical_features': text_features.get('musical_features', {}),
-            'sequence_length': min(len(item.get('midi_tokens', [])), self.max_sequence_length)
+            "midi_tokens": torch.tensor(tokens, dtype=torch.long),
+            "bert_embedding": torch.tensor(bert_emb, dtype=torch.float),  # [768]
+            "tfidf_features": torch.tensor(tfidf_feat, dtype=torch.float),  # [768]
+            "sequence_length": item["sequence_length"],
         }
 
+
 class DataPreparer:
-    """Prepares training data from processed MIDI and text data."""
-    
-    def __init__(self, 
-                 max_sequence_length: int = 1024,
-                 max_text_length: int = 512,
-                 batch_size: int = 32):
+    """Prepares data for training."""
+
+    def __init__(
+        self,
+        max_sequence_length: int = 1024,
+        max_text_length: int = 512,
+        batch_size: int = 32,
+        text_processor_use_gpu: bool = False,
+    ):
+        """
+        Args:
+            max_sequence_length: Maximum MIDI token length.
+            max_text_length: Maximum text embedding length.
+            batch_size: DataLoader batch size.
+            text_processor_use_gpu: Whether to load BERT/spaCy models on GPU.
+                For most training-time usages we only need pre-computed embeddings,
+                so keeping this `False` avoids occupying precious GPU VRAM.
+        """
         self.max_sequence_length = max_sequence_length
         self.max_text_length = max_text_length
         self.batch_size = batch_size
-        
+
         self.midi_processor = MIDIProcessor(max_sequence_length=max_sequence_length)
-        self.text_processor = TextProcessor(max_length=max_text_length)
-    
+        self.text_processor = TextProcessor(
+            max_length=max_text_length, use_gpu=text_processor_use_gpu
+        )
+
     def load_paired_data(self, paired_data_file: str) -> List[Dict[str, Any]]:
         """Load paired data from file."""
-        with open(paired_data_file, 'r', encoding='utf-8') as f:
+        with open(paired_data_file, encoding="utf-8") as f:
             paired_data = json.load(f)
         return paired_data
-    
+
     def process_paired_data(self, paired_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Process paired data into training format."""
         processed_data = []
-        
+
         for item in paired_data:
-            midi_file = item.get('midi_file')
-            text_description = item.get('text_description')
-            
+            midi_file = item.get("midi_file")
+            text_description = item.get("text_description")
+
             if not midi_file or not text_description:
                 continue
-            
+
             # Process MIDI
             midi_processed = self.midi_processor.process_midi_file(midi_file)
             if midi_processed is None:
                 continue
-            
+
             # Process text
             text_processed = self.text_processor.process_text(text_description)
-            
+
             # Combine into training item
             training_item = {
-                'midi_file': midi_file,
-                'text_description': text_description,
-                'midi_tokens': midi_processed['tokens'],
-                'midi_metadata': midi_processed['metadata'],
-                'text_features': text_processed,
-                'sequence_length': midi_processed['sequence_length']
+                "midi_file": midi_file,
+                "text_description": text_description,
+                "midi_tokens": midi_processed["tokens"],
+                "midi_metadata": midi_processed["metadata"],
+                "text_features": text_processed,
+                "sequence_length": midi_processed["sequence_length"],
             }
-            
+
             processed_data.append(training_item)
-        
+
         return processed_data
-    
-    def create_dataset(self, processed_data: List[Dict[str, Any]]) -> MusicTextDataset:
-        """Create dataset from processed data."""
-        return MusicTextDataset(
-            processed_data,
-            max_sequence_length=self.max_sequence_length,
-            max_text_length=self.max_text_length
-        )
-    
-    def create_dataloader(self, dataset: MusicTextDataset, shuffle: bool = True) -> DataLoader:
-        """Create dataloader from dataset."""
+
+    def create_dataset(self, data: List[Dict[str, Any]]) -> Dataset:
+        """Create a PyTorch dataset from processed data."""
+        return MusicTextDataset(data, self.max_sequence_length, self.max_text_length)
+
+    def create_dataloader(self, dataset: Dataset, shuffle: bool = True) -> DataLoader:
+        """Create a PyTorch dataloader from a dataset."""
         return DataLoader(
-            dataset,
-            batch_size=self.batch_size,
-            shuffle=shuffle,
-            num_workers=0,  # Set to 0 for Windows compatibility
-            drop_last=True
+            dataset, batch_size=self.batch_size, shuffle=shuffle, num_workers=2, pin_memory=True
         )
-    
-    def split_data(self, processed_data: List[Dict[str, Any]], 
-                   train_ratio: float = 0.8,
-                   val_ratio: float = 0.1) -> Tuple[List[Dict[str, Any]], 
-                                                   List[Dict[str, Any]], 
-                                                   List[Dict[str, Any]]]:
-        """Split data into train/validation/test sets."""
-        total_size = len(processed_data)
-        train_size = int(total_size * train_ratio)
-        val_size = int(total_size * val_ratio)
-        
+
+    def split_data(
+        self, data: List[Dict[str, Any]], train_ratio: float = 0.8, val_ratio: float = 0.1
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """Split data into train, validation, and test sets."""
         # Shuffle data
-        np.random.shuffle(processed_data)
-        
-        train_data = processed_data[:train_size]
-        val_data = processed_data[train_size:train_size + val_size]
-        test_data = processed_data[train_size + val_size:]
-        
+        indices = np.random.permutation(len(data))
+
+        # Calculate split indices
+        train_idx = int(len(data) * train_ratio)
+        val_idx = train_idx + int(len(data) * val_ratio)
+
+        # Split data
+        train_data = [data[i] for i in indices[:train_idx]]
+        val_data = [data[i] for i in indices[train_idx:val_idx]]
+        test_data = [data[i] for i in indices[val_idx:]]
+
         return train_data, val_data, test_data
-    
-    def prepare_training_data(self, paired_data_file: str, 
-                             output_dir: str = "data/processed") -> Dict[str, Any]:
+
+    def prepare_training_data(
+        self, paired_data_file: str, output_dir: str = "data/processed"
+    ) -> Dict[str, Any]:
         """Prepare complete training data."""
         print("Loading paired data...")
         paired_data = self.load_paired_data(paired_data_file)
-        
+
         print("Processing paired data...")
         processed_data = self.process_paired_data(paired_data)
-        
+
         print("Splitting data...")
         train_data, val_data, test_data = self.split_data(processed_data)
-        
+
         # Create datasets
         train_dataset = self.create_dataset(train_data)
         val_dataset = self.create_dataset(val_data)
         test_dataset = self.create_dataset(test_data)
-        
+
         # Create dataloaders
         train_loader = self.create_dataloader(train_dataset, shuffle=True)
         val_loader = self.create_dataloader(val_dataset, shuffle=False)
         test_loader = self.create_dataloader(test_dataset, shuffle=False)
-        
+
         # Save processed data
         os.makedirs(output_dir, exist_ok=True)
-        
+
         training_data = {
-            'train_data': train_data,
-            'val_data': val_data,
-            'test_data': test_data,
-            'vocab_size': self.midi_processor.vocab_size,
-            'max_sequence_length': self.max_sequence_length,
-            'max_text_length': self.max_text_length
+            "train_data": train_data,
+            "val_data": val_data,
+            "test_data": test_data,
+            "vocab_size": self.midi_processor.vocab_size,
+            "max_sequence_length": self.max_sequence_length,
+            "max_text_length": self.max_text_length,
         }
-        
-        with open(os.path.join(output_dir, 'training_data.json'), 'w', encoding='utf-8') as f:
+
+        with open(os.path.join(output_dir, "training_data.json"), "w", encoding="utf-8") as f:
             json.dump(training_data, f, indent=2, ensure_ascii=False)
-        
-        print(f"Training data prepared:")
+
+        print("Training data prepared:")
         print(f"  Train: {len(train_data)} samples")
         print(f"  Validation: {len(val_data)} samples")
         print(f"  Test: {len(test_data)} samples")
         print(f"  Vocabulary size: {self.midi_processor.vocab_size}")
-        
-        return {
-            'train_loader': train_loader,
-            'val_loader': val_loader,
-            'test_loader': test_loader,
-            'vocab_size': self.midi_processor.vocab_size,
-            'training_data': training_data
-        }
-    
-    def get_data_statistics(self, processed_data: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Get statistics about the processed data."""
-        stats = {
-            'total_samples': len(processed_data),
-            'avg_sequence_length': 0,
-            'avg_text_length': 0,
-            'vocab_size': self.midi_processor.vocab_size,
-            'text_features': {
-                'has_bert': 0,
-                'has_tfidf': 0,
-                'has_musical_features': 0
-            }
-        }
-        
-        if processed_data:
-            sequence_lengths = [item.get('sequence_length', 0) for item in processed_data]
-            text_lengths = [item.get('text_features', {}).get('text_length', 0) for item in processed_data]
-            
-            stats['avg_sequence_length'] = np.mean(sequence_lengths)
-            stats['avg_text_length'] = np.mean(text_lengths)
-            
-            # Count feature availability
-            for item in processed_data:
-                text_features = item.get('text_features', {})
-                if text_features.get('bert_embedding'):
-                    stats['text_features']['has_bert'] += 1
-                if text_features.get('tfidf_features'):
-                    stats['text_features']['has_tfidf'] += 1
-                if text_features.get('musical_features'):
-                    stats['text_features']['has_musical_features'] += 1
-        
-        return stats
 
-def prepare_training_data(paired_data_file: str, output_dir: str = "data/processed") -> Dict[str, Any]:
+        return {
+            "train_loader": train_loader,
+            "val_loader": val_loader,
+            "test_loader": test_loader,
+            "vocab_size": self.midi_processor.vocab_size,
+            "training_data": training_data,
+        }
+
+    def get_data_statistics(self, data: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Get statistics about the processed data."""
+        if not data:
+            return {"error": "No data available"}
+
+        sequence_lengths = [item["sequence_length"] for item in data]
+
+        # Get metadata statistics
+        durations = [
+            item["midi_metadata"]["duration"]
+            for item in data
+            if "duration" in item["midi_metadata"]
+        ]
+        tempos = [
+            item["midi_metadata"]["tempo"] for item in data if "tempo" in item["midi_metadata"]
+        ]
+
+        # Count instruments
+        instrument_counts = {}
+        for item in data:
+            if "instruments" in item["midi_metadata"]:
+                for instrument in item["midi_metadata"]["instruments"]:
+                    if instrument in instrument_counts:
+                        instrument_counts[instrument] += 1
+                    else:
+                        instrument_counts[instrument] = 1
+
+        # Sort instruments by count
+        top_instruments = sorted(instrument_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+
+        return {
+            "total_samples": len(data),
+            "sequence_length": {
+                "min": min(sequence_lengths) if sequence_lengths else 0,
+                "max": max(sequence_lengths) if sequence_lengths else 0,
+                "mean": sum(sequence_lengths) / len(sequence_lengths) if sequence_lengths else 0,
+                "median": sorted(sequence_lengths)[len(sequence_lengths) // 2]
+                if sequence_lengths
+                else 0,
+            },
+            "duration": {
+                "min": min(durations) if durations else 0,
+                "max": max(durations) if durations else 0,
+                "mean": sum(durations) / len(durations) if durations else 0,
+            },
+            "tempo": {
+                "min": min(tempos) if tempos else 0,
+                "max": max(tempos) if tempos else 0,
+                "mean": sum(tempos) / len(tempos) if tempos else 0,
+            },
+            "top_instruments": dict(top_instruments),
+        }
+
+
+def prepare_training_data(
+    paired_data_file: str, output_dir: str = "data/processed"
+) -> Dict[str, Any]:
     """Convenience function to prepare training data."""
     preparer = DataPreparer()
-    return preparer.prepare_training_data(paired_data_file, output_dir) 
+    return preparer.prepare_training_data(paired_data_file, output_dir)
