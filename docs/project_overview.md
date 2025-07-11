@@ -112,12 +112,13 @@ Dự án AMT là hệ thống phiên âm nhạc tự động sử dụng mô hì
 
 #### 2.2. `process.py`
 - Script xử lý dữ liệu MIDI và văn bản
-- Sử dụng lớp `AdvancedProcessor` 
+- Sử dụng lớp `UnifiedProcessor` 
 - Chuyển đổi dữ liệu thô thành dạng có thể sử dụng cho huấn luyện
 - Hỗ trợ các chế độ:
-  - `single`: Xử lý một file đơn lẻ
-  - `batch`: Xử lý hàng loạt file
-  - `continue`: Tiếp tục từ checkpoint
+  - `single`: Xử lý một file đơn lẻ với văn bản tùy chọn
+  - `paired`: Xử lý dữ liệu đã được thu thập và ghép cặp từ bước collect
+- Hỗ trợ đầy đủ các tính năng nâng cao như mã hóa phân cấp, relative attention và contextual embeddings
+- Tối ưu hóa hiệu suất với xử lý song song và checkpoint
 
 #### 2.3. `train.py`
 - Script huấn luyện mô hình
@@ -140,22 +141,6 @@ Dự án AMT là hệ thống phiên âm nhạc tự động sử dụng mô hì
   - `midi_to_text`: Kiểm thử chuyển từ MIDI sang văn bản
   - `parameter_sweep`: Thử nghiệm với nhiều tham số khác nhau
   - `test_data`: Đánh giá trên tập test
-
-#### 2.6. `continue_from_checkpoint.py`
-- Script để tiếp tục xử lý từ một checkpoint
-- Gọi hàm `continue_from_checkpoint` từ module `amt.process`
-- Hữu ích cho việc xử lý các tập dữ liệu lớn
-- Khôi phục trạng thái và tiếp tục từ điểm dừng
-
-#### 2.7. `create_training_data.py`
-- Script tạo dữ liệu huấn luyện từ dữ liệu đã xử lý
-- Gọi hàm `create_advanced_training_data` từ module `amt.train`
-- Thực hiện các biến đổi và chuẩn bị cho việc huấn luyện
-
-#### 2.8. `process_batched.py`
-- Script xử lý dữ liệu theo batch
-- Tối ưu hóa cho các tập dữ liệu lớn
-- Hỗ trợ xử lý song song thông qua tham số `--workers`
 
 ### 3. Thư mục dữ liệu
 
@@ -238,10 +223,11 @@ Dự án AMT là hệ thống phiên âm nhạc tự động sử dụng mô hì
    - Ghép cặp dữ liệu
    - Lọc theo chất lượng (tùy chọn)
    
-2. Xử lý dữ liệu (`process.py` hoặc `process_batched.py`)
+2. Xử lý dữ liệu (`process.py`)
    - Chuyển đổi dữ liệu thô thành tokens
    - Mã hóa phân cấp cho MIDI
    - Tạo embeddings cho văn bản
+   - Xử lý song song hiệu quả với checkpoint
    
 3. Tạo dữ liệu huấn luyện (`create_training_data.py`)
    - Chia tập train/val/test

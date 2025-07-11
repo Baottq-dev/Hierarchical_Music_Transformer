@@ -80,74 +80,32 @@ python collect.py --midi_dir data/midi --output_dir data/output --filter_quality
 
 ### 2.2 Xử lý dữ liệu (Process)
 
-Bước này xử lý dữ liệu thô thành định dạng phù hợp cho huấn luyện, sử dụng lớp `AdvancedProcessor`:
+Bước này xử lý dữ liệu thô thành định dạng phù hợp cho huấn luyện, sử dụng lớp `UnifiedProcessor` kết hợp các tính năng tốt nhất từ cả hai phương pháp xử lý trước đây:
 
 #### 2.2.1 Xử lý một file đơn lẻ:
 ```bash
-python process.py single path/to/file.mid
+python process.py single path/to/file.mid --text-file path/to/description.txt
 ```
 
-#### 2.2.2 Xử lý hàng loạt:
+#### 2.2.2 Xử lý dữ liệu đã ghép cặp:
 ```bash
-python process.py batch path/to/midi/dir --text-dir path/to/text/dir
-```
-
-#### 2.2.3 Tiếp tục từ checkpoint:
-```bash
-python process.py continue path/to/checkpoint.json
+python process.py paired path/to/paired_data.json --output-dir data/processed
 ```
 
 #### Các tùy chọn chính:
-- `--mode`: Chế độ xử lý (single, batch, continue)
-- `--use_hierarchical_encoding`: Sử dụng mã hóa phân cấp (khuyến nghị bật)
-- `--use_relative_attention`: Sử dụng attention vị trí tương đối
-- `--use_contextual_embeddings`: Sử dụng contextual embeddings
-- `--max_sequence_length`: Độ dài tối đa của chuỗi (mặc định: 1024)
-- `--batch_size`: Kích thước batch (mặc định: 32)
-- `--device`: Thiết bị sử dụng (cuda, cpu)
-- `--checkpoint_interval`: Số lượng file xử lý giữa các checkpoint
-- `--num_workers`: Số lượng worker cho xử lý song song
+- `--mode`: Chế độ xử lý (standard, enhanced)
+- `--output-dir`: Thư mục đầu ra (mặc định: data/processed)
+- `--batch-size`: Kích thước batch (mặc định: 32)
+- `--num-workers`: Số lượng worker cho xử lý song song
+- `--checkpoint-interval`: Số lượng batch giữa các checkpoint
+- `--use-cache`: Sử dụng caching để tăng tốc xử lý
+- `--use-gpu`: Sử dụng GPU nếu có sẵn
+- `--log-level`: Mức độ log (debug, info, warning, error, critical)
+- `--no-hierarchical-encoding`: Tắt mã hóa phân cấp
+- `--no-relative-attention`: Tắt attention vị trí tương đối
+- `--no-contextual-embeddings`: Tắt contextual embeddings
 
-### 2.3 Xử lý batched (cho bộ dữ liệu lớn)
-
-Script tối ưu hóa cho việc xử lý các tập dữ liệu lớn, hỗ trợ xử lý song song:
-
-```bash
-python process_batched.py --input_dir data/reference --output_dir data/processed --workers 4 --use_gpu
-```
-
-#### Các tùy chọn:
-- `--input_dir`: Thư mục đầu vào
-- `--output_dir`: Thư mục đầu ra
-- `--workers`: Số lượng worker cho xử lý song song
-- `--batch_size`: Kích thước batch
-- `--use_gpu`: Sử dụng GPU nếu có
-- `--resume`: Tiếp tục xử lý từ lần trước
-- `--hierarchical`: Sử dụng mã hóa phân cấp
-
-### 2.4 Tiếp tục từ checkpoint
-
-Nếu xử lý bị gián đoạn, bạn có thể tiếp tục từ checkpoint:
-
-```bash
-python continue_from_checkpoint.py --midi_checkpoint data/processed/midi_checkpoint.json --text_checkpoint data/processed/text_checkpoint.json --input_file data/output/paired_data.json --output_dir data/processed --workers 4 --use_gpu
-```
-
-#### Các tùy chọn quan trọng:
-- `--midi_checkpoint`: Path đến file checkpoint MIDI
-- `--text_checkpoint`: Path đến file checkpoint văn bản
-- `--input_file`: File dữ liệu ghép cặp đầu vào
-- `--output_dir`: Thư mục đầu ra cho dữ liệu đã xử lý
-- `--workers`: Số lượng worker (mặc định: 4)
-- `--use_gpu`: Sử dụng GPU cho xử lý văn bản
-- `--use_cache`: Sử dụng cache để tăng tốc xử lý
-- `--log_level`: Mức độ log
-- `--checkpoint_interval`: Số batch giữa các lần lưu checkpoint
-- `--batch_size`: Kích thước batch
-- `--force_restart`: Bắt đầu lại từ đầu
-- `--save_partial`: Lưu kết quả một phần nếu xử lý không hoàn thành
-
-### 2.5 Tạo dữ liệu huấn luyện
+### 2.3 Tạo dữ liệu huấn luyện
 
 Script này chuẩn bị dữ liệu cho huấn luyện mô hình, bao gồm phân chia tập dữ liệu và tăng cường dữ liệu:
 
@@ -259,7 +217,7 @@ python -m spacy download en_core_web_sm
 python collect.py --midi_dir data/midi --output_dir data/output --filter_quality --min_text_length 30 --min_duration 15.0
 
 # 3. Xử lý dữ liệu
-python process_batched.py --input_dir data/output --output_dir data/processed --workers 4 --use_gpu --hierarchical
+python process.py paired --input_file data/output/paired_data.json --output-dir data/processed --use-gpu --num-workers 4
 
 # 4. Tạo dữ liệu huấn luyện
 python create_training_data.py --paired-data-file data/output/complete_dataset_filtered.json --output_dir data/processed --dataset-name music_dataset --use-hierarchical-encoding --augment

@@ -29,11 +29,8 @@ pip install -e ".[dev]"
 # Process a single MIDI file
 python process.py single path/to/file.mid
 
-# Process a directory of MIDI files with advanced features
-python process.py batch path/to/midi/dir --text-dir path/to/text/dir
-
-# Continue processing from a checkpoint
-python process.py continue path/to/checkpoint.json
+# Process paired data from collection step
+python process.py paired path/to/paired_data.json
 
 # Train a model with hierarchical encoding
 python train.py --paired-data-file data/paired_data.json --use-hierarchical-encoding
