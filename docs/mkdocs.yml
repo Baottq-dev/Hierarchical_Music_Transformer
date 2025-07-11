@@ -1,0 +1,90 @@
+site_name: AMT Documentation
+site_description: Documentation for the Automated Music Transcription (AMT) project
+site_author: AMT Team
+repo_url: https://github.com/username/AMT
+repo_name: username/AMT
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    primary: indigo
+    accent: amber
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.expand
+    - navigation.indexes
+    - navigation.top
+    - content.code.annotate
+    - content.tabs.link
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_source: true
+            show_bases: true
+            heading_level: 3
+  - git-revision-date-localized:
+      enable_creation_date: true
+  - minify:
+      minify_html: true
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - footnotes
+  - attr_list
+  - md_in_html
+  - def_list
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Overview:
+    - Introduction: overview/index.md
+    - Architecture: overview/architecture.md
+    - Model: overview/model.md
+  - Usage:
+    - Installation: usage/installation.md
+    - Configuration: usage/configuration.md
+    - Data Collection: usage/data-collection.md
+    - Data Processing: usage/data-processing.md
+    - Training: usage/training.md
+    - Generation: usage/generation.md
+    - Evaluation: usage/evaluation.md
+  - API Reference:
+    - Overview: api/index.md
+    - Configuration: api/config.md
+    - Data Collection: api/collect.md
+    - Data Processing: api/process.md
+    - Training: api/train.md
+    - Generation: api/generate.md
+    - Evaluation: api/evaluate.md
+    - Utilities: api/utils.md
+  - Development:
+    - Contributing: development/contributing.md
+    - Testing: development/testing.md
+    - CI/CD: development/ci-cd.md
+  - Changelog: changelog.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/username/AMT
+  version:
+    provider: mike 
