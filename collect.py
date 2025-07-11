@@ -26,6 +26,7 @@ def main():
     parser.add_argument("--filter_quality", action="store_true", help="Filter data by quality")
     parser.add_argument("--min_text_length", type=int, default=20, help="Minimum text length")
     parser.add_argument("--min_duration", type=float, default=10.0, help="Minimum MIDI duration")
+    parser.add_argument("--require_wikipedia", action="store_true", help="Only use descriptions from Wikipedia")
     parser.add_argument("--log_level", default=settings.log_level, 
                         choices=["debug", "info", "warning", "error", "critical"], 
                         help="Logging level")
@@ -54,7 +55,7 @@ def main():
     # Step 2: Collect text descriptions
     logger.info("\n📝 Step 2: Collecting text descriptions...")
     text_collector = TextCollector()
-    paired_data = text_collector.collect_text_for_all_midi(midi_metadata)
+    paired_data = text_collector.collect_text_for_all_midi(midi_metadata, require_wikipedia=args.require_wikipedia)
 
     paired_file = os.path.join(args.output_dir, "paired_data.json")
     with open(paired_file, "w", encoding="utf-8") as f:

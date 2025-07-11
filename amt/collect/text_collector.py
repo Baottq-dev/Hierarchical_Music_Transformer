@@ -95,7 +95,7 @@ class TextCollector:
         else:
             return f"A musical composition titled '{name}'. This is a MIDI file containing musical notes and timing information."
 
-    def collect_text_for_midi(self, midi_metadata: Dict[str, Any]) -> Dict[str, Any]:
+    def collect_text_for_midi(self, midi_metadata: Dict[str, Any], require_wikipedia: bool = False) -> Optional[Dict[str, Any]]:
         """Collect text description for a MIDI file."""
         filename = midi_metadata["file_name"]
         name_without_ext = filename.replace(".mid", "").replace(".midi", "")
@@ -108,6 +108,10 @@ class TextCollector:
             description = self._clean_text(wiki_content)
             source = "wikipedia"
         else:
+            # If require_wikipedia is True, skip this file
+            if require_wikipedia:
+                return None
+
             # Generate from filename
             description = self.generate_description_from_filename(filename)
             source = "generated"
@@ -131,14 +135,15 @@ class TextCollector:
         return text
 
     def collect_text_for_all_midi(
-        self, midi_metadata_list: List[Dict[str, Any]]
+        self, midi_metadata_list: List[Dict[str, Any]], require_wikipedia: bool = False
     ) -> List[Dict[str, Any]]:
         """Collect text descriptions for all MIDI files."""
         paired_data = []
 
         for metadata in midi_metadata_list:
-            paired_item = self.collect_text_for_midi(metadata)
-            paired_data.append(paired_item)
+            paired_item = self.collect_text_for_midi(metadata, require_wikipedia)
+            if paired_item:  # Only add if not None
+                paired_data.append(paired_item)
 
             # Add delay to be respectful to APIs
             time.sleep(0)
@@ -146,7 +151,7 @@ class TextCollector:
         return paired_data
 
 
-def pair_midi_with_wikipedia(metadata_file: str, output_file: str):
+def pair_midi_with_wikipedia(metadata_file: str, output_file: str, require_wikipedia: bool = False):
     """Convenience function to pair MIDI files with Wikipedia descriptions."""
     # Load metadata
     with open(metadata_file, encoding="utf-8") as f:
@@ -154,7 +159,7 @@ def pair_midi_with_wikipedia(metadata_file: str, output_file: str):
 
     # Collect text descriptions
     collector = TextCollector()
-    paired_data = collector.collect_text_for_all_midi(midi_metadata)
+    paired_data = collector.collect_text_for_all_midi(midi_metadata, require_wikipedia)
 
     # Save paired data
     with open(output_file, "w", encoding="utf-8") as f:

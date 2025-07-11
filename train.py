@@ -63,7 +63,7 @@ class AdvancedTrainer:
         # Set device
         if device is None:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        else:
+    else:
             self.device = torch.device(device)
             
         self.model = model.to(self.device)
@@ -110,7 +110,7 @@ class AdvancedTrainer:
             Dictionary with training history
         """
         logger.info(f"Starting training for {num_epochs} epochs")
-        start_time = time.time()
+    start_time = time.time()
         
         # Training history
         history = {
@@ -164,8 +164,8 @@ class AdvancedTrainer:
         
         # Save final model
         self._save_checkpoint(name="final_model")
-        
-        # Log training time
+    
+    # Log training time
         total_time = time.time() - start_time
         logger.info(f"Training completed in {total_time:.2f} seconds")
         
@@ -559,7 +559,7 @@ def main():
     
     # Parse arguments
     args = parser.parse_args()
-    
+
     if args.paired_data_file is None and args.training_data is None:
         parser.error("Either --paired-data-file or --training-data must be provided")
     
