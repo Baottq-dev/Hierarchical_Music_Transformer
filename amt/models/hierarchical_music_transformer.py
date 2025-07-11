@@ -9,6 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Dict, List, Any, Optional, Tuple, Union
 import numpy as np
+import os
 
 class PositionalEncoding(nn.Module):
     """
@@ -239,7 +240,8 @@ class HierarchicalMusicTransformer(nn.Module):
         max_seq_len: int = 1024,
         dropout: float = 0.1,
         use_relative_attention: bool = True,
-        use_hierarchical_encoding: bool = True
+        use_hierarchical_encoding: bool = True,
+        pretrained_model_path: str = None
     ):
         """
         Initialize hierarchical music transformer
@@ -249,15 +251,21 @@ class HierarchicalMusicTransformer(nn.Module):
             d_model: Model dimension
             num_heads: Number of attention heads
             num_layers: Number of transformer layers
-            d_ff: Feed forward dimension
+            d_ff: Feed-forward dimension
             max_seq_len: Maximum sequence length
             dropout: Dropout rate
             use_relative_attention: Whether to use relative attention
             use_hierarchical_encoding: Whether to use hierarchical encoding
+            pretrained_model_path: Path to pretrained model weights
         """
         super().__init__()
         
+        self.vocab_size = vocab_size
         self.d_model = d_model
+        self.num_heads = num_heads
+        self.num_layers = num_layers
+        self.d_ff = d_ff
+        self.max_seq_len = max_seq_len
         self.use_relative_attention = use_relative_attention
         self.use_hierarchical_encoding = use_hierarchical_encoding
         
@@ -271,14 +279,11 @@ class HierarchicalMusicTransformer(nn.Module):
         
         # Positional encoding
         self.pos_encoding = PositionalEncoding(
-            d_model, 
-            max_seq_len, 
-            dropout,
-            use_relative=use_relative_attention
+            d_model, max_seq_len, dropout, use_relative=use_relative_attention
         )
         
-        # Transformer layers
-        self.layers = nn.ModuleList([
+        # Transformer blocks
+        self.transformer_blocks = nn.ModuleList([
             HierarchicalTransformerBlock(d_model, num_heads, d_ff, dropout)
             for _ in range(num_layers)
         ])
@@ -288,7 +293,11 @@ class HierarchicalMusicTransformer(nn.Module):
         
         # Initialize parameters
         self._init_parameters()
-    
+        
+        # Load pretrained weights if provided
+        if pretrained_model_path and os.path.exists(pretrained_model_path):
+            self.load_pretrained_weights(pretrained_model_path)
+            
     def _init_parameters(self):
         """Initialize parameters using Xavier initialization"""
         for p in self.parameters():
@@ -383,7 +392,7 @@ class HierarchicalMusicTransformer(nn.Module):
         x = self.pos_encoding(x, hierarchical_info)
         
         # Apply transformer layers
-        for layer in self.layers:
+        for layer in self.transformer_blocks:
             x = layer(x, mask, hierarchical_info)
         
         # Output layer
@@ -466,6 +475,134 @@ class HierarchicalMusicTransformer(nn.Module):
                 pass
         
         return generated
+
+    def load_pretrained_weights(self, model_path: str, strict: bool = False):
+        """
+        Load pretrained weights from a saved model
+        
+        Args:
+            model_path: Path to the pretrained model weights
+            strict: Whether to require all keys to match
+        """
+        try:
+            state_dict = torch.load(model_path, map_location='cpu')
+            
+            # Handle different state dict formats
+            if 'model_state_dict' in state_dict:
+                state_dict = state_dict['model_state_dict']
+                
+            # Check for vocabulary size mismatch
+            if 'token_embedding.weight' in state_dict:
+                pretrained_vocab_size = state_dict['token_embedding.weight'].shape[0]
+                
+                if pretrained_vocab_size != self.vocab_size:
+                    print(f"Warning: Vocabulary size mismatch. Pretrained: {pretrained_vocab_size}, Current: {self.vocab_size}")
+                    
+                    if pretrained_vocab_size > self.vocab_size:
+                        # Truncate the embedding matrix
+                        state_dict['token_embedding.weight'] = state_dict['token_embedding.weight'][:self.vocab_size, :]
+                        state_dict['output_layer.weight'] = state_dict['output_layer.weight'][:self.vocab_size, :]
+                        if 'output_layer.bias' in state_dict:
+                            state_dict['output_layer.bias'] = state_dict['output_layer.bias'][:self.vocab_size]
+                    else:
+                        # Expand the embedding matrix (initialize new tokens randomly)
+                        old_embeddings = state_dict['token_embedding.weight']
+                        new_embeddings = torch.randn(self.vocab_size, self.d_model) * 0.02  # Small random values
+                        new_embeddings[:pretrained_vocab_size, :] = old_embeddings
+                        state_dict['token_embedding.weight'] = new_embeddings
+                        
+                        old_output_weights = state_dict['output_layer.weight']
+                        new_output_weights = torch.randn(self.vocab_size, self.d_model) * 0.02
+                        new_output_weights[:pretrained_vocab_size, :] = old_output_weights
+                        state_dict['output_layer.weight'] = new_output_weights
+                        
+                        if 'output_layer.bias' in state_dict:
+                            old_bias = state_dict['output_layer.bias']
+                            new_bias = torch.zeros(self.vocab_size)
+                            new_bias[:pretrained_vocab_size] = old_bias
+                            state_dict['output_layer.bias'] = new_bias
+            
+            # Load weights
+            missing_keys, unexpected_keys = self.load_state_dict(state_dict, strict=strict)
+            
+            if missing_keys:
+                print(f"Missing keys when loading pretrained weights: {missing_keys}")
+            if unexpected_keys:
+                print(f"Unexpected keys when loading pretrained weights: {unexpected_keys}")
+                
+            print(f"Successfully loaded pretrained weights from {model_path}")
+            return True
+        except Exception as e:
+            print(f"Error loading pretrained weights: {e}")
+            return False
+            
+    def save_for_transfer_learning(self, save_path: str):
+        """
+        Save model weights in a format suitable for transfer learning
+        
+        Args:
+            save_path: Path to save the model weights
+        """
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        
+        # Save model configuration along with weights
+        config = {
+            'vocab_size': self.vocab_size,
+            'd_model': self.d_model,
+            'num_heads': self.num_heads,
+            'num_layers': self.num_layers,
+            'd_ff': self.d_ff,
+            'max_seq_len': self.max_seq_len,
+            'use_relative_attention': self.use_relative_attention,
+            'use_hierarchical_encoding': self.use_hierarchical_encoding
+        }
+        
+        torch.save({
+            'model_state_dict': self.state_dict(),
+            'config': config
+        }, save_path)
+        
+        print(f"Model saved for transfer learning at {save_path}")
+        
+    def freeze_layers(self, num_layers_to_freeze: int = None):
+        """
+        Freeze layers for fine-tuning
+        
+        Args:
+            num_layers_to_freeze: Number of layers to freeze from the bottom
+                                 If None, freezes all except the output layer
+        """
+        if num_layers_to_freeze is None:
+            # Freeze all except output layer
+            for name, param in self.named_parameters():
+                if 'output_layer' not in name:
+                    param.requires_grad = False
+        else:
+            # Freeze embedding
+            for param in self.token_embedding.parameters():
+                param.requires_grad = False
+                
+            # Freeze positional encoding
+            for param in self.pos_encoding.parameters():
+                param.requires_grad = False
+                
+            # Freeze specified transformer blocks
+            for i in range(min(num_layers_to_freeze, len(self.transformer_blocks))):
+                for param in self.transformer_blocks[i].parameters():
+                    param.requires_grad = False
+                    
+        # Count trainable parameters
+        trainable_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
+        total_params = sum(p.numel() for p in self.parameters())
+        
+        print(f"Trainable parameters: {trainable_params:,} ({trainable_params/total_params:.1%} of total)")
+        
+    def unfreeze_all_layers(self):
+        """Unfreeze all layers for full fine-tuning"""
+        for param in self.parameters():
+            param.requires_grad = True
+            
+        print("All layers unfrozen for fine-tuning")
 
 
 def create_transformer_model(

@@ -62,6 +62,8 @@ class TextProcessor:
         use_cache: bool = True,
         cache_dir: str = "data/processed/text_cache",
         batch_size: int = 32,
+        enable_fine_tuning: bool = False,
+        music_fine_tuned_model: str = None,
     ):
         self.max_length = max_length
         self.use_bert = use_bert and TRANSFORMERS_AVAILABLE
@@ -72,6 +74,8 @@ class TextProcessor:
         self.use_cache = use_cache
         self.cache_dir = cache_dir
         self.batch_size = batch_size
+        self.enable_fine_tuning = enable_fine_tuning
+        self.music_fine_tuned_model = music_fine_tuned_model
 
         # Create cache directory if needed
         if use_cache and not os.path.exists(cache_dir):
@@ -85,7 +89,12 @@ class TextProcessor:
         # Initialize BERT
         if self.use_bert:
             try:
-                if 'bert' in self.bert_model_name.lower():
+                # Use fine-tuned music model if specified and available
+                if self.enable_fine_tuning and self.music_fine_tuned_model and os.path.exists(self.music_fine_tuned_model):
+                    logger.info(f"Loading fine-tuned music language model from {self.music_fine_tuned_model}")
+                    self.bert_tokenizer = AutoTokenizer.from_pretrained(self.music_fine_tuned_model)
+                    self.bert_model = AutoModel.from_pretrained(self.music_fine_tuned_model)
+                elif 'bert' in self.bert_model_name.lower():
                     self.bert_tokenizer = BertTokenizer.from_pretrained(self.bert_model_name)
                     self.bert_model = BertModel.from_pretrained(self.bert_model_name)
                 else:
@@ -157,6 +166,119 @@ class TextProcessor:
             "tempo": ["fast", "slow", "moderate", "lively", "relaxed", "upbeat", "downbeat"],
             "dynamics": ["loud", "quiet", "soft", "strong", "gentle", "powerful", "delicate"],
         }
+        
+    # Add new method for fine-tuning language models on music descriptions
+    def fine_tune_language_model(
+        self, 
+        texts: List[str], 
+        output_model_path: str = "models/checkpoints/music_bert",
+        num_epochs: int = 3, 
+        batch_size: int = 8,
+        learning_rate: float = 2e-5
+    ):
+        """
+        Fine-tune the language model on music descriptions
+        
+        Args:
+            texts: List of music description texts
+            output_model_path: Path to save the fine-tuned model
+            num_epochs: Number of training epochs
+            batch_size: Training batch size
+            learning_rate: Learning rate for fine-tuning
+        
+        Returns:
+            True if fine-tuning was successful
+        """
+        if not TRANSFORMERS_AVAILABLE:
+            logger.error("Transformers library not available. Cannot fine-tune model.")
+            return False
+            
+        try:
+            from transformers import TrainingArguments, Trainer, DataCollatorForLanguageModeling
+            
+            logger.info(f"Fine-tuning language model on {len(texts)} music descriptions")
+            
+            # Create directory for output model
+            os.makedirs(os.path.dirname(output_model_path), exist_ok=True)
+            
+            # Prepare tokenizer and model for fine-tuning
+            tokenizer = self.bert_tokenizer
+            model = self.bert_model
+            
+            # Set model to training mode
+            model.train()
+            
+            # Tokenize the texts
+            def tokenize_function(examples):
+                return tokenizer(examples, padding="max_length", truncation=True, max_length=self.max_length)
+            
+            # Create dataset
+            from torch.utils.data import Dataset
+            
+            class MusicTextDataset(Dataset):
+                def __init__(self, texts, tokenizer):
+                    self.encodings = tokenize_function(texts)
+                    
+                def __getitem__(self, idx):
+                    return {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
+                
+                def __len__(self):
+                    return len(self.encodings.input_ids)
+            
+            # Split into train/val
+            from sklearn.model_selection import train_test_split
+            train_texts, val_texts = train_test_split(texts, test_size=0.1)
+            
+            train_dataset = MusicTextDataset(train_texts, tokenizer)
+            val_dataset = MusicTextDataset(val_texts, tokenizer)
+            
+            # Data collator
+            data_collator = DataCollatorForLanguageModeling(
+                tokenizer=tokenizer, mlm=True, mlm_probability=0.15
+            )
+            
+            # Training arguments
+            training_args = TrainingArguments(
+                output_dir=output_model_path,
+                overwrite_output_dir=True,
+                num_train_epochs=num_epochs,
+                per_device_train_batch_size=batch_size,
+                per_device_eval_batch_size=batch_size,
+                evaluation_strategy="epoch",
+                save_strategy="epoch",
+                save_total_limit=2,
+                learning_rate=learning_rate,
+                weight_decay=0.01,
+                logging_dir=os.path.join(output_model_path, "logs"),
+            )
+            
+            # Initialize trainer
+            trainer = Trainer(
+                model=model,
+                args=training_args,
+                train_dataset=train_dataset,
+                eval_dataset=val_dataset,
+                data_collator=data_collator,
+            )
+            
+            # Train the model
+            trainer.train()
+            
+            # Save the fine-tuned model
+            model.save_pretrained(output_model_path)
+            tokenizer.save_pretrained(output_model_path)
+            
+            # Update the instance to use the fine-tuned model
+            self.music_fine_tuned_model = output_model_path
+            self.bert_model = model
+            self.bert_tokenizer = tokenizer
+            
+            logger.info(f"Fine-tuned model saved to {output_model_path}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error fine-tuning language model: {e}")
+            return False
 
     def _get_cache_path(self, text: str) -> str:
         """Get cache file path for a text."""

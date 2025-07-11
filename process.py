@@ -47,7 +47,13 @@ class UnifiedProcessor:
         num_workers: int = None,
         checkpoint_interval: int = 50,
         use_cache: bool = True,
-        device: str = None
+        device: str = None,
+        # Transfer learning options
+        use_pretrained_text_model: bool = False,
+        pretrained_text_model_path: str = None,
+        enable_text_fine_tuning: bool = False,
+        use_pretrained_music_model: bool = False,
+        pretrained_music_model_path: str = None
     ):
         """Initialize unified processor with configurable parameters
         
@@ -62,6 +68,11 @@ class UnifiedProcessor:
             checkpoint_interval: Interval for checkpointing
             use_cache: Whether to use caching for processed files
             device: Device to use for processing (auto-detects if None)
+            use_pretrained_text_model: Whether to use a pretrained text model
+            pretrained_text_model_path: Path to pretrained text model
+            enable_text_fine_tuning: Whether to enable fine-tuning of text model
+            use_pretrained_music_model: Whether to use a pretrained music model
+            pretrained_music_model_path: Path to pretrained music model
         """
         self.mode = mode
         self.max_sequence_length = max_sequence_length
@@ -72,6 +83,13 @@ class UnifiedProcessor:
         self.num_workers = num_workers if num_workers else max(1, mp.cpu_count() - 1)
         self.checkpoint_interval = checkpoint_interval
         self.use_cache = use_cache
+        
+        # Transfer learning options
+        self.use_pretrained_text_model = use_pretrained_text_model
+        self.pretrained_text_model_path = pretrained_text_model_path
+        self.enable_text_fine_tuning = enable_text_fine_tuning
+        self.use_pretrained_music_model = use_pretrained_music_model
+        self.pretrained_music_model_path = pretrained_music_model_path
         
         # Auto-detect device if not specified
         if device is None:
@@ -86,6 +104,7 @@ class UnifiedProcessor:
             cache_dir=os.path.join("data/processed", "cache/midi")
         )
         
+        # Initialize text processor with transfer learning options
         self.text_processor = TextProcessor(
             max_length=512,
             use_bert=True,
@@ -94,7 +113,9 @@ class UnifiedProcessor:
             use_gpu=(self.device.type == "cuda"),
             use_cache=use_cache,
             cache_dir=os.path.join("data/processed", "cache/text"),
-            batch_size=32
+            batch_size=32,
+            enable_fine_tuning=enable_text_fine_tuning,
+            music_fine_tuned_model=pretrained_text_model_path if use_pretrained_text_model else None
         )
         
         self.data_preparer = DataPreparer(
@@ -108,6 +129,40 @@ class UnifiedProcessor:
         logger.info(f"Using relative attention: {use_relative_attention}")
         logger.info(f"Using contextual embeddings: {use_contextual_embeddings}")
         logger.info(f"Using cache: {use_cache}")
+        
+        # Log transfer learning configuration
+        if use_pretrained_text_model:
+            logger.info(f"Using pretrained text model: {pretrained_text_model_path}")
+            logger.info(f"Text model fine-tuning enabled: {enable_text_fine_tuning}")
+        if use_pretrained_music_model:
+            logger.info(f"Using pretrained music model: {pretrained_music_model_path}")
+            
+    def fine_tune_text_model(self, texts: List[str], output_model_path: str = None, num_epochs: int = 3):
+        """
+        Fine-tune the text model on music descriptions
+        
+        Args:
+            texts: List of music description texts
+            output_model_path: Path to save the fine-tuned model
+            num_epochs: Number of training epochs
+            
+        Returns:
+            True if fine-tuning was successful
+        """
+        if not self.enable_text_fine_tuning:
+            logger.warning("Text model fine-tuning is not enabled. Set enable_text_fine_tuning=True in constructor.")
+            return False
+            
+        if output_model_path is None:
+            output_model_path = "models/checkpoints/music_bert_fine_tuned"
+            
+        logger.info(f"Fine-tuning text model on {len(texts)} music descriptions")
+        return self.text_processor.fine_tune_language_model(
+            texts=texts,
+            output_model_path=output_model_path,
+            num_epochs=num_epochs,
+            batch_size=self.batch_size
+        )
 
     def process_file(self, midi_file: str, text_file: Optional[str] = None) -> Dict[str, Any]:
         """Process a single MIDI file with optional text description
@@ -403,7 +458,7 @@ def main():
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size for processing")
     parser.add_argument("--num-workers", type=int, default=None, 
                        help="Number of worker processes (default: CPU count - 1)")
-    parser.add_argument("--checkpoint-interval", type=int, default=50,
+    parser.add_argument("--checkpoint-interval", type=int, default=100,
                        help="Interval for saving checkpoints")
     parser.add_argument("--use-cache", action="store_true", help="Use caching to speed up processing")
     parser.add_argument("--use-gpu", action="store_true", help="Use GPU for text processing if available")
@@ -421,6 +476,19 @@ def main():
                                help="Disable contextual embeddings")
     advanced_group.add_argument("--max-sequence-length", type=int, default=1024,
                                help="Maximum sequence length for models")
+    
+    # Transfer learning options
+    transfer_group = parser.add_argument_group("Transfer learning options")
+    transfer_group.add_argument("--use-pretrained-text-model", action="store_true",
+                                help="Use a pretrained text model for fine-tuning")
+    transfer_group.add_argument("--pretrained-text-model-path", type=str,
+                                help="Path to a pretrained text model for fine-tuning")
+    transfer_group.add_argument("--enable-text-fine-tuning", action="store_true",
+                                help="Enable fine-tuning of the text model")
+    transfer_group.add_argument("--use-pretrained-music-model", action="store_true",
+                                help="Use a pretrained music model")
+    transfer_group.add_argument("--pretrained-music-model-path", type=str,
+                                help="Path to a pretrained music model")
     
     # Create subparsers for different modes
     subparsers = parser.add_subparsers(dest="command", help="Processing command")
@@ -458,7 +526,12 @@ def main():
         num_workers=args.num_workers,
         checkpoint_interval=args.checkpoint_interval,
         use_cache=args.use_cache,
-        device="cuda" if use_gpu else "cpu"
+        device="cuda" if use_gpu else "cpu",
+        use_pretrained_text_model=args.use_pretrained_text_model,
+        pretrained_text_model_path=args.pretrained_text_model_path,
+        enable_text_fine_tuning=args.enable_text_fine_tuning,
+        use_pretrained_music_model=args.use_pretrained_music_model,
+        pretrained_music_model_path=args.pretrained_music_model_path
     )
     
     # Execute the appropriate command

@@ -1,137 +1,116 @@
-# AMT: Automated Music Transcription
+# AMT - Automated Music Transcription
 
-[![CI](https://github.com/username/AMT/actions/workflows/ci.yml/badge.svg)](https://github.com/username/AMT/actions/workflows/ci.yml)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Documentation](https://img.shields.io/badge/docs-latest-brightgreen.svg)](https://username.github.io/AMT/)
+AMT is a project that focuses on automated music transcription and generation using transformer-based models. It can convert between MIDI music files and text descriptions, enabling both music-to-text and text-to-music generation.
 
-AMT is an automated music transcription system using transformer models. It converts audio recordings of music into symbolic representations (MIDI) and vice versa.
+## Features
 
-## 🚀 Quick Start
+- Convert MIDI music to text descriptions
+- Generate MIDI music from text descriptions
+- Hierarchical music representation
+- Advanced transformer architecture
+- Transfer learning support for improved performance
 
-### Installation
+## Installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/username/AMT.git
+git clone https://github.com/yourusername/AMT.git
 cd AMT
 
-# Install the package
-pip install -e .
+# Install dependencies
+pip install -r requirements.txt
 
-# Install development dependencies
-pip install -e ".[dev]"
+# Install the package in development mode
+pip install -e .
 ```
 
-### Running
+## Usage
+
+AMT follows a pipeline approach:
+
+1. **Collect data**: Gather MIDI files and text descriptions
+2. **Process data**: Convert MIDI and text into model-compatible formats
+3. **Train models**: Train the transformer models
+4. **Generate music**: Generate MIDI from text or text from MIDI
+5. **Evaluate**: Evaluate model performance
+
+### Data Collection
 
 ```bash
-# Process a single MIDI file
-python process.py single path/to/file.mid
-
-# Process paired data from collection step
-python process.py paired path/to/paired_data.json
-
-# Train a model with hierarchical encoding
-python train.py --paired-data-file data/paired_data.json --use-hierarchical-encoding
+python collect.py --midi-dir path/to/midi/files --output-file data/collected_data.json
 ```
 
-## 🏗️ Architecture
+### Data Processing
 
-AMT consists of several modules:
-
-1. **Collection**: Gathers and pre-processes MIDI and text data from various sources
-2. **Processing**: Converts MIDI and text into tokenized data with hierarchical structure
-3. **Training**: Trains transformer models using the processed data
-4. **Generation**: Generates new music or text based on input prompts
-5. **Testing**: Evaluates model performance and output quality
-
-### Advanced Hierarchical Processing
-
-The system now features state-of-the-art hierarchical processing for music data:
-
-- **Multi-level Token Structure**: Represents music at bar, beat, and note levels
-- **Contextual Embeddings**: Links musical elements with their textual descriptions
-- **Optimized Checkpoint System**: Efficiently processes large datasets with robust error handling
-- **Data Augmentation**: Automatically expands training data through musical transformations
-
-### Hierarchical Music Transformer
-
-Our transformer model leverages music's hierarchical structure:
-
-- **Hierarchical Attention**: Captures relationships between musical elements at different levels
-- **Relative Position Encoding**: Improves modeling of temporal relationships in music
-- **Efficient Training**: Includes advanced techniques like gradient accumulation and dynamic batch sizing
-
-## System Architecture
-
-```mermaid
-flowchart TD
-    subgraph "Advanced AMT System Architecture"
-        subgraph "Hierarchical Data Processing"
-            A[Raw MIDI Files] --> B[MIDI Processor]
-            C[Text Descriptions] --> D[Text Processor]
-            B --> E[Hierarchical Token Encoding]
-            D --> F[SentencePiece + BERT]
-            E --> G[Multi-level Features]
-            F --> H[Contextual Embeddings]
-            G --> I[Data Augmentation]
-            H --> I
-            I --> J[Advanced Training Dataset]
-        end
-        
-        subgraph "Hierarchical Music Transformer"
-            K[Token Embeddings] --> L[Hierarchical Position Encoding]
-            L --> M[Hierarchical Attention]
-            M --> N[Transformer Layers]
-            N --> O[Output Generation]
-        end
-        
-        subgraph "Training System"
-            P[Advanced Trainer] --> Q[Dynamic Learning Rate]
-            P --> R[Gradient Accumulation]
-            P --> S[Early Stopping]
-            P --> T[Checkpoint Management]
-        end
-        
-        J --> K
-        O --> U[Generated Music]
-    end
+```bash
+python process.py single --midi-file path/to/midi/file.mid --text-file path/to/description.txt --output-dir data/processed
 ```
 
-## 📋 Documentation
+Or for batch processing:
 
-Detailed documentation is available in the [docs](docs/) directory:
+```bash
+python process.py paired --paired-data-file data/collected_data.json --output-dir data/processed
+```
 
-- [Getting Started](docs/01_getting_started.md)
-- [Data Collection](docs/02_data_collection.md)
-- [Data Processing](docs/03_data_processing.md)
-- [Training](docs/04_training.md)
-- [Model Details](docs/05_model_deep_dive.md)
+### Training
+
+```bash
+python train.py --paired-data-file data/processed/paired_data.json --output-dir models
+```
+
+### Transfer Learning
+
+AMT now supports transfer learning to improve model performance:
+
+#### Text Model Transfer Learning
+
+```bash
+# Process data with a pre-trained text model
+python process.py paired --paired-data-file data/collected_data.json --output-dir data/processed --use-pretrained-text-model --pretrained-text-model-path models/pretrained_bert
+
+# Fine-tune the text model on music descriptions
+python process.py paired --paired-data-file data/collected_data.json --output-dir data/processed --use-pretrained-text-model --pretrained-text-model-path models/pretrained_bert --enable-text-fine-tuning
+```
+
+#### Music Model Transfer Learning
+
+```bash
+# Train with a pre-trained music model
+python train.py --paired-data-file data/processed/paired_data.json --output-dir models --pretrained-model models/checkpoints/pretrained_model.pt --transfer-learning-mode fine_tuning --freeze-layers 3
+```
+
+Transfer learning modes:
+- `feature_extraction`: Freezes all layers except output layer
+- `fine_tuning`: Freezes a specified number of layers
+- `full_fine_tuning`: All layers are trainable
+
+### Generation
+
+```bash
+python generate.py --model-path models/checkpoints/model.pt --text "A cheerful piano melody with jazz influences"
+```
+
+## Project Structure
+
+- `amt/`: Main package directory
+  - `collect/`: Data collection modules
+  - `process/`: Data processing modules
+  - `train/`: Model training modules
+  - `generate/`: Music generation modules
+  - `evaluate/`: Evaluation modules
+  - `models/`: Model architecture definitions
+  - `utils/`: Utility functions
+
+## Documentation
+
+For more detailed documentation, see the `docs/` directory:
+
+- [Project Overview](docs/project_overview.md)
+- [Running Guide](docs/running_guide.md)
+- [Model Deep Dive](docs/05_model_deep_dive.md)
+- [Configuration](docs/configuration.md)
 - [Checkpoint System](docs/checkpoint_system.md)
 
-## 🛠️ Development
+## License
 
-### Testing
-
-```bash
-# Run all tests
-pytest
-
-# Run specific test modules
-pytest tests/test_midi_processor.py
-```
-
-### Contributing
-
-Contributions are welcome! Please check our [contribution guidelines](CONTRIBUTING.md).
-
-## 📜 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- The music21 library for MIDI processing
-- Hugging Face Transformers for pre-trained models
-- All contributors who have helped with the project 
+[MIT License](LICENSE) 

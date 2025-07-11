@@ -29,68 +29,85 @@ from amt.config import get_settings
 logger = get_logger(__name__)
 settings = get_settings()
 
-
 class AdvancedTrainer:
-    """Advanced trainer for hierarchical music transformer model"""
+    """Advanced trainer for Hierarchical Music Transformer with transfer learning support"""
     
     def __init__(
         self,
-        model: HierarchicalMusicTransformer,
+        model: nn.Module,
         train_loader: torch.utils.data.DataLoader,
         val_loader: torch.utils.data.DataLoader,
         optimizer: torch.optim.Optimizer,
-        scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
-        loss_fn: nn.Module = nn.CrossEntropyLoss(),
-        device: Optional[str] = None,
-        log_dir: str = "logs",
-        checkpoint_dir: str = "checkpoints",
-        max_grad_norm: float = 1.0
+        scheduler: torch.optim.lr_scheduler._LRScheduler,
+        device: str,
+        log_dir: str,
+        checkpoint_dir: str,
+        max_grad_norm: float = 1.0,
+        use_transfer_learning: bool = False,
+        freeze_layers: int = None,
+        transfer_learning_mode: str = "feature_extraction"
     ):
         """Initialize the trainer
         
         Args:
-            model: Hierarchical music transformer model
+            model: The model to train
             train_loader: Training data loader
             val_loader: Validation data loader
             optimizer: Optimizer
             scheduler: Learning rate scheduler
-            loss_fn: Loss function
-            device: Device to use for training
+            device: Device to train on
             log_dir: Directory for tensorboard logs
-            checkpoint_dir: Directory for model checkpoints
+            checkpoint_dir: Directory for checkpoints
             max_grad_norm: Maximum gradient norm for clipping
+            use_transfer_learning: Whether to use transfer learning
+            freeze_layers: Number of layers to freeze (None = all except output)
+            transfer_learning_mode: Mode for transfer learning ('feature_extraction' or 'fine_tuning')
         """
-        # Set device
-        if device is None:
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    else:
-            self.device = torch.device(device)
-            
-        self.model = model.to(self.device)
+        self.model = model
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.optimizer = optimizer
         self.scheduler = scheduler
-        self.loss_fn = loss_fn
+        self.device = device
+        self.log_dir = log_dir
+        self.checkpoint_dir = checkpoint_dir
         self.max_grad_norm = max_grad_norm
+        self.use_transfer_learning = use_transfer_learning
+        self.freeze_layers = freeze_layers
+        self.transfer_learning_mode = transfer_learning_mode
         
-        # Set up directories
-        self.log_dir = Path(log_dir)
-        self.checkpoint_dir = Path(checkpoint_dir)
-        self.log_dir.mkdir(exist_ok=True, parents=True)
-        self.checkpoint_dir.mkdir(exist_ok=True, parents=True)
+        # Create directories
+        os.makedirs(log_dir, exist_ok=True)
+        os.makedirs(checkpoint_dir, exist_ok=True)
         
-        # Set up tensorboard
-        self.writer = SummaryWriter(log_dir=str(self.log_dir))
+        # Initialize tensorboard writer
+        self.writer = SummaryWriter(log_dir=log_dir)
         
+        # Apply transfer learning settings if enabled
+        if use_transfer_learning and hasattr(model, 'freeze_layers'):
+            if transfer_learning_mode == 'feature_extraction':
+                # Freeze all layers except output for feature extraction
+                model.freeze_layers(None)
+            elif transfer_learning_mode == 'fine_tuning':
+                # Freeze specific number of layers for fine-tuning
+                model.freeze_layers(freeze_layers)
+            else:
+                # No freezing - full fine-tuning
+                model.unfreeze_all_layers()
+                logger.info("All model layers are trainable (full fine-tuning)")
+        
+        logger.info(f"AdvancedTrainer initialized with device: {device}")
+        logger.info(f"Using transfer learning: {use_transfer_learning}")
+        if use_transfer_learning:
+            logger.info(f"Transfer learning mode: {transfer_learning_mode}")
+            if freeze_layers is not None:
+                logger.info(f"Freezing {freeze_layers} layers")
+
         # Training state
         self.current_epoch = 0
         self.global_step = 0
         self.best_val_loss = float('inf')
         
-        logger.info(f"Advanced Trainer initialized with device: {self.device}")
-        logger.info(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
-    
     def train(
         self, 
         num_epochs: int, 
@@ -557,14 +574,174 @@ def main():
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--generate-samples", action="store_true", help="Generate samples during validation")
     
+    # Transfer learning arguments
+    transfer_group = parser.add_argument_group("Transfer learning")
+    transfer_group.add_argument("--pretrained-model", type=str, help="Path to pretrained model for transfer learning")
+    transfer_group.add_argument("--transfer-learning-mode", type=str, default="fine_tuning", 
+                             choices=["feature_extraction", "fine_tuning", "full_fine_tuning"],
+                             help="Transfer learning mode")
+    transfer_group.add_argument("--freeze-layers", type=int, help="Number of layers to freeze (for fine_tuning mode)")
+    
     # Parse arguments
     args = parser.parse_args()
 
     if args.paired_data_file is None and args.training_data is None:
         parser.error("Either --paired-data-file or --training-data must be provided")
     
-    # Run training
-    train_model(args)
+    # Set random seed
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    
+    # Determine device
+    if args.device == "auto":
+        args.device = "cuda" if torch.cuda.is_available() else "cpu"
+    
+    # Create run name if not provided
+    if args.run_name is None:
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        args.run_name = f"transformer_{timestamp}"
+    
+    # Create output directories
+    log_dir = os.path.join(args.output_dir, "logs", args.run_name)
+    checkpoint_dir = os.path.join(args.output_dir, "checkpoints", args.run_name)
+    os.makedirs(log_dir, exist_ok=True)
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    
+    # Save configuration
+    with open(os.path.join(log_dir, "config.json"), "w") as f:
+        json.dump(vars(args), f, indent=2)
+    
+    # Determine if we're using transfer learning
+    use_transfer_learning = args.pretrained_model is not None
+    
+    # Load training data or create it
+    if args.training_data and os.path.exists(args.training_data):
+        logger.info(f"Loading training data from {args.training_data}")
+        # Load existing training data
+        with open(args.training_data, "r") as f:
+            training_data = json.load(f)
+        
+        train_loader = training_data["train_loader"]
+        val_loader = training_data["val_loader"]
+        vocab_size = training_data["vocab_size"]
+        
+    else:
+        logger.info(f"Creating new training data from {args.paired_data_file}")
+        # Create new training data
+        training_data_results = create_advanced_training_data(
+            paired_data_file=args.paired_data_file,
+            output_dir=os.path.join(args.output_dir, "data"),
+            dataset_name=args.dataset_name,
+            max_sequence_length=args.max_seq_len,
+            batch_size=args.batch_size,
+            use_hierarchical_encoding=args.use_hierarchical_encoding,
+            use_contextual_embeddings=args.use_contextual_embeddings
+        )
+        
+        train_loader = training_data_results["train_loader"]
+        val_loader = training_data_results["val_loader"]
+        vocab_size = training_data_results["vocab_size"]
+    
+    logger.info(f"Vocab size: {vocab_size}")
+    logger.info(f"Training with batch size: {args.batch_size}")
+    
+    # Create model
+    if use_transfer_learning:
+        # Load pretrained model for transfer learning
+        logger.info(f"Loading pretrained model from {args.pretrained_model} for transfer learning")
+        try:
+            # Load model with configuration from saved file
+            state_dict = torch.load(args.pretrained_model, map_location='cpu')
+            if 'config' in state_dict:
+                config = state_dict['config']
+                # Override vocab size with current vocab size
+                config['vocab_size'] = vocab_size
+                # Create model with loaded config
+                model = HierarchicalMusicTransformer(**config)
+                # Load weights
+                if 'model_state_dict' in state_dict:
+                    model.load_pretrained_weights(args.pretrained_model)
+                else:
+                    model.load_state_dict(state_dict)
+            else:
+                # Create model with current arguments
+                model = create_transformer_model(
+                    vocab_size=vocab_size,
+                    d_model=args.d_model,
+                    num_heads=args.num_heads,
+                    num_layers=args.num_layers,
+                    max_seq_len=args.max_seq_len,
+                    use_relative_attention=args.use_relative_attention,
+                    use_hierarchical_encoding=args.use_hierarchical_encoding,
+                    device=args.device
+                )
+                # Load weights
+                model.load_pretrained_weights(args.pretrained_model)
+                
+            logger.info(f"Successfully loaded pretrained model for transfer learning")
+        except Exception as e:
+            logger.error(f"Error loading pretrained model: {e}")
+            logger.info("Creating new model instead")
+            model = create_transformer_model(
+                vocab_size=vocab_size,
+                d_model=args.d_model,
+                num_heads=args.num_heads,
+                num_layers=args.num_layers,
+                max_seq_len=args.max_seq_len,
+                use_relative_attention=args.use_relative_attention,
+                use_hierarchical_encoding=args.use_hierarchical_encoding,
+                device=args.device
+            )
+    else:
+        # Create new model
+        model = create_transformer_model(
+            vocab_size=vocab_size,
+            d_model=args.d_model,
+            num_heads=args.num_heads,
+            num_layers=args.num_layers,
+            max_seq_len=args.max_seq_len,
+            use_relative_attention=args.use_relative_attention,
+            use_hierarchical_encoding=args.use_hierarchical_encoding,
+            device=args.device
+        )
+    
+    # Create optimizer
+    optimizer = optim.AdamW(
+        model.parameters(),
+        lr=args.learning_rate,
+        weight_decay=args.weight_decay
+    )
+    
+    # Create scheduler
+    scheduler = CosineAnnealingLR(
+        optimizer,
+        T_max=args.num_epochs,
+        eta_min=args.min_learning_rate
+    )
+    
+    # Create trainer
+    trainer = AdvancedTrainer(
+        model=model,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        device=args.device,
+        log_dir=log_dir,
+        checkpoint_dir=checkpoint_dir,
+        max_grad_norm=args.max_grad_norm,
+        use_transfer_learning=use_transfer_learning,
+        freeze_layers=args.freeze_layers,
+        transfer_learning_mode=args.transfer_learning_mode
+    )
+    
+    # Train the model
+    trainer.train(args.num_epochs, checkpoint_interval=args.checkpoint_interval)
+    
+    # Save final model
+    trainer.save_checkpoint("final")
+    
+    logger.info("Training complete!")
 
 
 if __name__ == "__main__":
