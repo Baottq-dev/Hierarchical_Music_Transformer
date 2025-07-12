@@ -21,7 +21,7 @@ except ImportError:
     print("Warning: spaCy not available. Some text processing features will be disabled.")
 
 try:
-    from transformers import BertModel, BertTokenizer, AutoModel, AutoTokenizer
+    from transformers import BertModel, BertTokenizer, AutoModel, AutoTokenizer, RobertaModel, RobertaTokenizer
     TRANSFORMERS_AVAILABLE = True
 except ImportError:
     TRANSFORMERS_AVAILABLE = False
@@ -64,6 +64,9 @@ class TextProcessor:
         batch_size: int = 32,
         enable_fine_tuning: bool = False,
         music_fine_tuned_model: str = None,
+        use_pretrained_model: bool = False,
+        pretrained_model_path: Optional[str] = None,
+        optimal_transfer_learning: bool = False
     ):
         self.max_length = max_length
         self.use_bert = use_bert and TRANSFORMERS_AVAILABLE
@@ -76,6 +79,9 @@ class TextProcessor:
         self.batch_size = batch_size
         self.enable_fine_tuning = enable_fine_tuning
         self.music_fine_tuned_model = music_fine_tuned_model
+        self.use_pretrained_model = use_pretrained_model
+        self.pretrained_model_path = pretrained_model_path
+        self.optimal_transfer_learning = optimal_transfer_learning
 
         # Create cache directory if needed
         if use_cache and not os.path.exists(cache_dir):
@@ -86,28 +92,11 @@ class TextProcessor:
         self.device = torch.device("cuda" if self.use_gpu else "cpu")
         logger.info(f"TextProcessor: Using device: {self.device}")
 
-        # Initialize BERT
-        if self.use_bert:
-            try:
-                # Use fine-tuned music model if specified and available
-                if self.enable_fine_tuning and self.music_fine_tuned_model and os.path.exists(self.music_fine_tuned_model):
-                    logger.info(f"Loading fine-tuned music language model from {self.music_fine_tuned_model}")
-                    self.bert_tokenizer = AutoTokenizer.from_pretrained(self.music_fine_tuned_model)
-                    self.bert_model = AutoModel.from_pretrained(self.music_fine_tuned_model)
-                elif 'bert' in self.bert_model_name.lower():
-                    self.bert_tokenizer = BertTokenizer.from_pretrained(self.bert_model_name)
-                    self.bert_model = BertModel.from_pretrained(self.bert_model_name)
-                else:
-                    # For other Hugging Face models
-                    self.bert_tokenizer = AutoTokenizer.from_pretrained(self.bert_model_name)
-                    self.bert_model = AutoModel.from_pretrained(self.bert_model_name)
-                
-                self.bert_model.to(self.device)  # Move model to GPU if available
-                self.bert_model.eval()
-                logger.info(f"Transformer model {self.bert_model_name} loaded on {self.device}")
-            except Exception as e:
-                logger.error(f"Warning: Could not load Transformer model: {e}")
-                self.use_bert = False
+        # Initialize BERT or pretrained model
+        if self.use_pretrained_model and self.pretrained_model_path:
+            self._load_pretrained_model()
+        elif self.use_bert:
+            self._initialize_bert()
 
         # Initialize SentencePiece
         if self.use_sentencepiece:
@@ -166,8 +155,239 @@ class TextProcessor:
             "tempo": ["fast", "slow", "moderate", "lively", "relaxed", "upbeat", "downbeat"],
             "dynamics": ["loud", "quiet", "soft", "strong", "gentle", "powerful", "delicate"],
         }
+    
+    def _initialize_bert(self):
+        """Initialize BERT model"""
+        try:
+            # Use RoBERTa if optimal_transfer_learning is enabled
+            if self.optimal_transfer_learning:
+                logger.info("Using RoBERTa-base model for optimal transfer learning")
+                self.bert_tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
+                self.bert_model = RobertaModel.from_pretrained("roberta-base")
+                self.bert_model_name = "roberta-base"
+            # Use fine-tuned music model if specified and available
+            elif self.enable_fine_tuning and self.music_fine_tuned_model and os.path.exists(self.music_fine_tuned_model):
+                logger.info(f"Loading fine-tuned music language model from {self.music_fine_tuned_model}")
+                self.bert_tokenizer = AutoTokenizer.from_pretrained(self.music_fine_tuned_model)
+                self.bert_model = AutoModel.from_pretrained(self.music_fine_tuned_model)
+            # Use specified model name
+            elif self.pretrained_model_path:
+                logger.info(f"Loading specified pretrained model: {self.pretrained_model_path}")
+                if 'roberta' in self.pretrained_model_path.lower():
+                    self.bert_tokenizer = RobertaTokenizer.from_pretrained(self.pretrained_model_path)
+                    self.bert_model = RobertaModel.from_pretrained(self.pretrained_model_path)
+                elif 'bert' in self.pretrained_model_path.lower():
+                    self.bert_tokenizer = BertTokenizer.from_pretrained(self.pretrained_model_path)
+                    self.bert_model = BertModel.from_pretrained(self.pretrained_model_path)
+                else:
+                    # For other Hugging Face models
+                    self.bert_tokenizer = AutoTokenizer.from_pretrained(self.pretrained_model_path)
+                    self.bert_model = AutoModel.from_pretrained(self.pretrained_model_path)
+            # Use default BERT model
+            elif 'bert' in self.bert_model_name.lower():
+                self.bert_tokenizer = BertTokenizer.from_pretrained(self.bert_model_name)
+                self.bert_model = BertModel.from_pretrained(self.bert_model_name)
+            else:
+                # For other Hugging Face models
+                self.bert_tokenizer = AutoTokenizer.from_pretrained(self.bert_model_name)
+                self.bert_model = AutoModel.from_pretrained(self.bert_model_name)
+            
+            self.bert_model.to(self.device)  # Move model to GPU if available
+            
+            # Set model to eval mode if not fine-tuning
+            if not self.enable_fine_tuning:
+                self.bert_model.eval()
+                # Freeze parameters
+                for param in self.bert_model.parameters():
+                    param.requires_grad = False
+            
+            logger.info(f"Transformer model {self.bert_model_name} loaded on {self.device}")
+        except Exception as e:
+            logger.error(f"Warning: Could not load Transformer model: {e}")
+            self.use_bert = False
+    
+    def _load_pretrained_model(self):
+        """Load pretrained text model for feature extraction"""
+        try:
+            logger.info(f"Loading pretrained text model from {self.pretrained_model_path}")
+            
+            # If optimal_transfer_learning is enabled, use RoBERTa-base
+            if self.optimal_transfer_learning:
+                logger.info("Using RoBERTa-base model for optimal transfer learning")
+                self.tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
+                self.pretrained_model = RobertaModel.from_pretrained("roberta-base")
+                self.pretrained_model.to(self.device)
+                return
+            
+            # Check if it's a Hugging Face model name or local path
+            if os.path.exists(self.pretrained_model_path):
+                # Local path - load using torch.load
+                self.pretrained_model = torch.load(self.pretrained_model_path, map_location=self.device)
+                # Try to load tokenizer if available
+                tokenizer_path = os.path.join(os.path.dirname(self.pretrained_model_path), "tokenizer")
+                if os.path.exists(tokenizer_path):
+                    self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+                else:
+                    # Fallback to BERT tokenizer
+                    self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+            else:
+                # Hugging Face model name
+                if 'roberta' in self.pretrained_model_path.lower():
+                    self.tokenizer = RobertaTokenizer.from_pretrained(self.pretrained_model_path)
+                    self.pretrained_model = RobertaModel.from_pretrained(self.pretrained_model_path)
+                elif 'bert' in self.pretrained_model_path.lower():
+                    self.tokenizer = BertTokenizer.from_pretrained(self.pretrained_model_path)
+                    self.pretrained_model = BertModel.from_pretrained(self.pretrained_model_path)
+                else:
+                    self.tokenizer = AutoTokenizer.from_pretrained(self.pretrained_model_path)
+                    self.pretrained_model = AutoModel.from_pretrained(self.pretrained_model_path)
+                self.pretrained_model.to(self.device)
+            
+            # Set to eval mode if not fine-tuning
+            if not self.enable_fine_tuning:
+                self.pretrained_model.eval()
+                # Freeze parameters
+                for param in self.pretrained_model.parameters():
+                    param.requires_grad = False
+            
+            logger.info(f"Successfully loaded pretrained text model")
+        except Exception as e:
+            logger.error(f"Error loading pretrained model: {e}")
+            self.pretrained_model = None
+            # Fallback to BERT if available
+            if TRANSFORMERS_AVAILABLE:
+                logger.info("Falling back to default BERT model")
+                self._initialize_bert()
+
+    def extract_features_with_pretrained(self, text):
+        """Extract features using pretrained model"""
+        if not hasattr(self, 'pretrained_model') or self.pretrained_model is None:
+            return self.extract_features_default(text)
         
-    # Add new method for fine-tuning language models on music descriptions
+        try:
+            # Clean text
+            text = self.clean_text(text)
+            
+            # Tokenize text
+            if hasattr(self, 'tokenizer'):
+                inputs = self.tokenizer(
+                    text,
+                    padding="max_length",
+                    truncation=True,
+                    max_length=self.max_length,
+                    return_tensors="pt"
+                )
+            else:
+                # Fallback to BERT tokenizer
+                inputs = self.bert_tokenizer(
+                    text,
+                    padding="max_length",
+                    truncation=True,
+                    max_length=self.max_length,
+                    return_tensors="pt"
+                )
+            
+            # Move inputs to device
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+            
+            # Extract features
+            with torch.no_grad():
+                outputs = self.pretrained_model(**inputs)
+                
+            # Get embeddings
+            token_embeddings = outputs.last_hidden_state.cpu().squeeze().numpy()
+            
+            # Get sentence embedding (CLS token or pooled output)
+            if hasattr(outputs, 'pooler_output'):
+                sentence_embedding = outputs.pooler_output.cpu().squeeze().numpy()
+            else:
+                # Use CLS token as sentence embedding
+                sentence_embedding = token_embeddings[0]
+            
+            return {
+                "token_embeddings": token_embeddings,
+                "sentence_embedding": sentence_embedding,
+                "input_ids": inputs["input_ids"].cpu().squeeze().tolist()
+            }
+        except Exception as e:
+            logger.error(f"Error extracting features with pretrained model: {e}")
+            return self.extract_features_default(text)
+
+    def extract_features_default(self, text):
+        """Default feature extraction when no pretrained model is available"""
+        # Clean text
+        text = self.clean_text(text)
+        
+        # Tokenize with basic tokenizer
+        tokens = text.split()
+        
+        # Create simple embeddings
+        embedding_dim = 768
+        vocab_size = 30000
+        
+        # Use consistent random seed for reproducibility
+        np.random.seed(42)
+        embedding_matrix = np.random.randn(vocab_size, embedding_dim) * 0.02
+        
+        # Map tokens to IDs using hash function
+        token_ids = [hash(token) % vocab_size for token in tokens]
+        
+        # Create token embeddings
+        if len(token_ids) > 0:
+            token_embeddings = np.array([embedding_matrix[token_id] for token_id in token_ids])
+            # Pad or truncate to max_length
+            if len(token_embeddings) > self.max_length:
+                token_embeddings = token_embeddings[:self.max_length]
+            elif len(token_embeddings) < self.max_length:
+                padding = np.zeros((self.max_length - len(token_embeddings), embedding_dim))
+                token_embeddings = np.vstack([token_embeddings, padding])
+            
+            # Get sentence embedding by averaging token embeddings
+            sentence_embedding = np.mean(token_embeddings, axis=0)
+        else:
+            # Handle empty text
+            token_embeddings = np.zeros((self.max_length, embedding_dim))
+            sentence_embedding = np.zeros(embedding_dim)
+            token_ids = [0] * min(len(tokens), self.max_length)
+        
+        return {
+            "token_embeddings": token_embeddings,
+            "sentence_embedding": sentence_embedding,
+            "input_ids": token_ids
+        }
+    
+    def get_vocab_size(self):
+        """Get vocabulary size of the tokenizer"""
+        if hasattr(self, 'tokenizer'):
+            return len(self.tokenizer)
+        elif hasattr(self, 'bert_tokenizer'):
+            return len(self.bert_tokenizer)
+        else:
+            return 30000  # Default size
+        
+    def process(self, text):
+        """Process text into tokens and features"""
+        # Extract features based on available models
+        if self.use_pretrained_model and hasattr(self, 'pretrained_model') and self.pretrained_model is not None:
+            features = self.extract_features_with_pretrained(text)
+        elif self.use_bert and hasattr(self, 'bert_model') and self.bert_model is not None:
+            features = self.get_bert_embedding(text)
+        else:
+            features = self.extract_features_default(text)
+        
+        # Extract musical features
+        musical_features = self.extract_musical_features(text)
+        
+        # Combine all features
+        result = {
+            "text": text,
+            "tokens": features.get("input_ids", []),
+            "features": features,
+            "musical_features": musical_features
+        }
+        
+        return result
+
     def fine_tune_language_model(
         self, 
         texts: List[str], 

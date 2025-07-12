@@ -34,6 +34,9 @@ class MIDIProcessor:
         pitch_range: Tuple[int, int] = (21, 108),
         use_cache: bool = True,
         cache_dir: str = "data/processed/cache",
+        use_pretrained_model: bool = False,
+        pretrained_model_path: Optional[str] = None,
+        use_hierarchical_encoding: bool = False
     ):
         self.max_sequence_length = max_sequence_length
         self.time_resolution = time_resolution
@@ -42,6 +45,10 @@ class MIDIProcessor:
         self.min_pitch, self.max_pitch = pitch_range
         self.use_cache = use_cache
         self.cache_dir = cache_dir
+        self.use_pretrained_model = use_pretrained_model
+        self.pretrained_model_path = pretrained_model_path
+        self.use_hierarchical_encoding = use_hierarchical_encoding
+        self.pretrained_model = None
 
         # Create cache directory if needed
         if use_cache and not os.path.exists(cache_dir):
@@ -52,6 +59,23 @@ class MIDIProcessor:
         self.vocab_size = (
             len(self.event_types) + self.max_pitch - self.min_pitch + 1 + velocity_bins + 1
         )
+        
+        # Load pretrained model if specified
+        if use_pretrained_model and pretrained_model_path:
+            self._load_pretrained_model()
+
+    def _load_pretrained_model(self):
+        """Load pretrained music model for feature extraction"""
+        try:
+            logger.info(f"Loading pretrained music model from {self.pretrained_model_path}")
+            if os.path.exists(self.pretrained_model_path):
+                self.pretrained_model = torch.load(self.pretrained_model_path, map_location='cpu')
+                logger.info("Successfully loaded pretrained music model")
+            else:
+                logger.warning(f"Pretrained model path does not exist: {self.pretrained_model_path}")
+        except Exception as e:
+            logger.error(f"Error loading pretrained model: {e}")
+            self.pretrained_model = None
 
     def _get_cache_path(self, midi_file: str) -> str:
         """Get cache file path for a MIDI file."""
@@ -115,6 +139,98 @@ class MIDIProcessor:
         # All methods failed
         return None
 
+    def extract_features_with_pretrained(self, midi_tokens, hierarchical_info=None):
+        """Extract features using pretrained model"""
+        if self.pretrained_model is None:
+            return self.extract_features_default(midi_tokens)
+        
+        try:
+            # Chuyển đổi tokens thành tensor
+            tokens_tensor = torch.tensor(midi_tokens, dtype=torch.long).unsqueeze(0)  # Add batch dimension
+            
+            # Extract features
+            with torch.no_grad():
+                if hasattr(self.pretrained_model, 'extract_features'):
+                    features = self.pretrained_model.extract_features(
+                        tokens_tensor, 
+                        hierarchical_data=hierarchical_info
+                    )
+                    return features.squeeze(0).numpy()  # Remove batch dimension
+                else:
+                    # Fallback if extract_features is not available
+                    return self.extract_features_default(midi_tokens)
+        except Exception as e:
+            logger.error(f"Error extracting features with pretrained model: {e}")
+            return self.extract_features_default(midi_tokens)
+
+    def extract_features_default(self, midi_tokens):
+        """Default feature extraction when no pretrained model is available"""
+        # Simple embedding based on token IDs
+        embedding_dim = 512
+        vocab_size = self.get_vocab_size()
+        
+        # Create a simple embedding matrix
+        np.random.seed(42)  # For reproducibility
+        embedding_matrix = np.random.randn(vocab_size, embedding_dim) * 0.02
+        
+        # Create embeddings for each token
+        embeddings = np.array([embedding_matrix[token % vocab_size] for token in midi_tokens])
+        
+        # Get a sequence-level representation by averaging
+        sequence_embedding = np.mean(embeddings, axis=0)
+        
+        return {
+            "token_embeddings": embeddings,
+            "sequence_embedding": sequence_embedding
+        }
+    
+    def get_vocab_size(self):
+        """Get the vocabulary size"""
+        return self.vocab_size
+    
+    def extract_hierarchical_info(self, midi_data):
+        """Extract hierarchical information from MIDI data if enabled"""
+        if not self.use_hierarchical_encoding:
+            return None
+            
+        # Extract time signature
+        time_sig = midi_data.time_signature_changes[0] if midi_data.time_signature_changes else None
+        numerator = time_sig.numerator if time_sig else 4
+        denominator = time_sig.denominator if time_sig else 4
+        
+        # Calculate ticks per bar and beat
+        ticks_per_beat = midi_data.resolution
+        ticks_per_bar = ticks_per_beat * numerator * (4 / denominator)
+        
+        # Extract bar and beat positions
+        bar_positions = []
+        beat_positions = []
+        bar_indices = []
+        beat_indices = []
+        
+        end_time_ticks = int(midi_data.get_end_time() * ticks_per_beat)
+        
+        for tick in range(0, end_time_ticks, ticks_per_beat // 4):  # Quarter beat resolution
+            time = tick / ticks_per_beat
+            
+            # Check if this is a bar position
+            if tick % int(ticks_per_bar) == 0:
+                bar_positions.append(time)
+                bar_indices.append(len(beat_positions))
+            
+            # Check if this is a beat position
+            if tick % ticks_per_beat == 0:
+                beat_positions.append(time)
+                beat_indices.append(len(beat_positions) - 1)
+        
+        return {
+            "bar_positions": bar_positions,
+            "beat_positions": beat_positions,
+            "bar_indices": bar_indices,
+            "beat_indices": beat_indices,
+            "time_signature": (numerator, denominator)
+        }
+        
     def extract_events(self, midi_data: pretty_midi.PrettyMIDI) -> List[Dict[str, Any]]:
         """Extract events from MIDI data."""
         events = []
@@ -378,6 +494,14 @@ class MIDIProcessor:
             except Exception as e:
                 print(f"Error saving cache for {midi_file}: {e}")
 
+        # After processing tokens, extract features if pretrained model is available
+        if self.use_pretrained_model and self.pretrained_model is not None:
+            hierarchical_info = self.extract_hierarchical_info(midi_data) if self.use_hierarchical_encoding else None
+            features = self.extract_features_with_pretrained(tokens, hierarchical_info)
+            result["features"] = features
+            if hierarchical_info:
+                result["hierarchical_info"] = hierarchical_info
+                
         return result
 
     def process_midi_files_parallel(

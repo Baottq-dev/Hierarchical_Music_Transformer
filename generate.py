@@ -1,272 +1,274 @@
 #!/usr/bin/env python3
 """
-Generate Module - Generates music from text descriptions
+Generation script for AMT model
+Generates MIDI from text descriptions or continues existing MIDI
 """
 
-import argparse
 import os
 import json
-import time
+import argparse
+import logging
+import torch
+import numpy as np
 from pathlib import Path
+from typing import Dict, Any, List, Optional
 
+from amt.generate.generator import Generator
+from amt.train.model import create_model
+from amt.process.midi_processor import MIDIProcessor
+from amt.process.text_processor import TextProcessor
 from amt.utils.logging import get_logger
 from amt.config import get_settings
-from amt.generate import MusicGenerator, generate_from_text
 
+# Set up logger and settings
 logger = get_logger(__name__)
 settings = get_settings()
 
-def generate_from_text(model_path: str,
-                      text: str,
-                      output_dir: str = None,
-                      model_type: str = "transformer",
-                      temperature: float = None,
-                      top_k: int = None,
-                      top_p: float = None,
-                      repetition_penalty: float = None,
-                      device: str = "cuda"):
-    """Generate music from text."""
-    # Use settings for default values
-    temperature = temperature if temperature is not None else settings.temperature
-    top_k = top_k if top_k is not None else settings.top_k
-    top_p = top_p if top_p is not None else settings.top_p
-    repetition_penalty = repetition_penalty if repetition_penalty is not None else settings.repetition_penalty
-    
-    # Create output directory
-    output_dir = output_dir or os.path.join(str(settings.output_dir), "generated")
-    os.makedirs(output_dir, exist_ok=True)
-    
-    # Create generator
-    generator = MusicGenerator(
-        model_path=model_path,
-        model_type=model_type,
-        device=device,
-        temperature=temperature,
-        top_k=top_k,
-        top_p=top_p,
-        repetition_penalty=repetition_penalty
-    )
-    
-    # Generate music
-    start_time = time.time()
-    result = generator.generate_from_text(text)
-    generation_time = time.time() - start_time
-    
-    logger.info(f"Generated music in {generation_time:.2f} seconds")
-    
-    # Save result
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    output_subdir = os.path.join(output_dir, f"text_to_midi_{timestamp}")
-    generator.save_result(result, output_subdir)
-    
-    logger.info(f"Result saved to {output_subdir}")
-    
-    return result
+def load_transfer_config(config_path: str) -> Dict[str, Any]:
+    """Load transfer learning configuration from file"""
+    try:
+        with open(config_path, "r") as f:
+            config = json.load(f)
+        logger.info(f"Loaded transfer learning configuration from {config_path}")
+        return config
+    except Exception as e:
+        logger.error(f"Error loading transfer learning configuration: {e}")
+        return {}
 
-def generate_from_midi(model_path: str,
-                      midi_file: str,
-                      output_dir: str = None,
-                      device: str = "cuda"):
-    """Generate text embedding from MIDI."""
-    # Create output directory
-    output_dir = output_dir or os.path.join(str(settings.output_dir), "generated")
-    os.makedirs(output_dir, exist_ok=True)
-    
-    # Create generator
-    generator = MusicGenerator(
-        model_path=model_path,
-        model_type="bidirectional",
-        device=device
-    )
-    
-    # Generate text embedding
-    start_time = time.time()
-    result = generator.generate_from_midi(midi_file)
-    generation_time = time.time() - start_time
-    
-    logger.info(f"Generated text embedding in {generation_time:.2f} seconds")
-    
-    # Save result
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    output_subdir = os.path.join(output_dir, f"midi_to_text_{timestamp}")
-    os.makedirs(output_subdir, exist_ok=True)
-    
-    # Save metadata
-    metadata_path = os.path.join(output_subdir, "metadata.json")
-    with open(metadata_path, 'w') as f:
-        json.dump(result, f)
-    
-    logger.info(f"Result saved to {output_subdir}")
-    
-    return result
-
-def generate_from_file(model_path: str,
-                      input_file: str,
-                      output_dir: str = None,
-                      model_type: str = "transformer",
-                      temperature: float = None,
-                      top_k: int = None,
-                      top_p: float = None,
-                      repetition_penalty: float = None,
-                      device: str = "cuda"):
-    """Generate music from a file containing text descriptions."""
-    # Use settings for default values
-    temperature = temperature if temperature is not None else settings.temperature
-    top_k = top_k if top_k is not None else settings.top_k
-    top_p = top_p if top_p is not None else settings.top_p
-    repetition_penalty = repetition_penalty if repetition_penalty is not None else settings.repetition_penalty
-    
-    # Load input file
-    with open(input_file, 'r', encoding='utf-8') as f:
-        texts = [line.strip() for line in f.readlines() if line.strip()]
-    
-    logger.info(f"Loaded {len(texts)} text descriptions from {input_file}")
-    
-    # Create output directory
-    output_dir = output_dir or os.path.join(str(settings.output_dir), "generated")
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    batch_dir = os.path.join(output_dir, f"batch_{timestamp}")
-    os.makedirs(batch_dir, exist_ok=True)
-    
-    # Create generator
-    generator = MusicGenerator(
-        model_path=model_path,
-        model_type=model_type,
-        device=device,
-        temperature=temperature,
-        top_k=top_k,
-        top_p=top_p,
-        repetition_penalty=repetition_penalty
-    )
-    
-    # Generate music for each text
-    results = []
-    for i, text in enumerate(texts):
-        try:
-            logger.info(f"Generating music for text {i+1}/{len(texts)}: {text[:50]}...")
-            
-            # Generate music
-            result = generator.generate_from_text(text)
-            
-            # Save result
-            output_subdir = os.path.join(batch_dir, f"sample_{i+1}")
-            generator.save_result(result, output_subdir)
-            
-            results.append({
-                'text': text,
-                'output_dir': output_subdir,
-                'generation_time': result['generation_time']
-            })
-        except Exception as e:
-            logger.error(f"Error generating music for text {i+1}: {e}")
-    
-    # Save batch metadata
-    batch_metadata = {
-        'input_file': input_file,
-        'model_path': model_path,
-        'model_type': model_type,
-        'temperature': temperature,
-        'top_k': top_k,
-        'top_p': top_p,
-        'repetition_penalty': repetition_penalty,
-        'results': results
-    }
-    
-    with open(os.path.join(batch_dir, "batch_metadata.json"), 'w') as f:
-        json.dump(batch_metadata, f)
-    
-    logger.info(f"Generated {len(results)} samples, saved to {batch_dir}")
-    
-    return results
+def apply_optimal_settings(args):
+    """Apply optimal transfer learning settings to arguments"""
+    # Set optimal text model
+    args.use_pretrained_text_model = True
+    if not args.pretrained_text_model_path:
+        args.pretrained_text_model_path = "roberta-base"
+        
+    logger.info(f"Using pretrained text model: {args.pretrained_text_model_path}")
+    return args
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate music from text descriptions")
-    
-    # Add global arguments
-    parser.add_argument("--log_level", default=settings.log_level, 
-                        choices=["debug", "info", "warning", "error", "critical"], 
-                        help="Logging level")
-    
-    # Add subparsers for different commands
-    subparsers = parser.add_subparsers(dest="command", help="Command to run")
-    
-    # Text-to-MIDI command
-    text_parser = subparsers.add_parser("text", help="Generate music from text")
-    text_parser.add_argument("--model", type=str, required=True, help="Path to trained model")
-    text_parser.add_argument("--text", type=str, help="Text description")
-    text_parser.add_argument("--output_dir", type=str, help=f"Output directory (default: {settings.output_dir}/generated)")
-    text_parser.add_argument("--model_type", type=str, default="transformer", choices=["transformer", "bidirectional"], help="Model type")
-    text_parser.add_argument("--temperature", type=float, default=None, help=f"Sampling temperature (default: {settings.temperature})")
-    text_parser.add_argument("--top_k", type=int, default=None, help=f"Top-k sampling parameter (default: {settings.top_k})")
-    text_parser.add_argument("--top_p", type=float, default=None, help=f"Top-p sampling parameter (default: {settings.top_p})")
-    text_parser.add_argument("--repetition_penalty", type=float, default=None, help=f"Repetition penalty (default: {settings.repetition_penalty})")
-    text_parser.add_argument("--device", type=str, default="cuda", help="Device to use")
-    
-    # MIDI-to-text command
-    midi_parser = subparsers.add_parser("midi", help="Generate text embedding from MIDI")
-    midi_parser.add_argument("--model", type=str, required=True, help="Path to trained model")
-    midi_parser.add_argument("--midi", type=str, required=True, help="Path to MIDI file")
-    midi_parser.add_argument("--output_dir", type=str, help=f"Output directory (default: {settings.output_dir}/generated)")
-    midi_parser.add_argument("--device", type=str, default="cuda", help="Device to use")
-    
-    # Batch generation command
-    batch_parser = subparsers.add_parser("batch", help="Generate music from a file containing text descriptions")
-    batch_parser.add_argument("--model", type=str, required=True, help="Path to trained model")
-    batch_parser.add_argument("--input_file", type=str, required=True, help="Path to input file")
-    batch_parser.add_argument("--output_dir", type=str, help=f"Output directory (default: {settings.output_dir}/generated)")
-    batch_parser.add_argument("--model_type", type=str, default="transformer", choices=["transformer", "bidirectional"], help="Model type")
-    batch_parser.add_argument("--temperature", type=float, default=None, help=f"Sampling temperature (default: {settings.temperature})")
-    batch_parser.add_argument("--top_k", type=int, default=None, help=f"Top-k sampling parameter (default: {settings.top_k})")
-    batch_parser.add_argument("--top_p", type=float, default=None, help=f"Top-p sampling parameter (default: {settings.top_p})")
-    batch_parser.add_argument("--repetition_penalty", type=float, default=None, help=f"Repetition penalty (default: {settings.repetition_penalty})")
-    batch_parser.add_argument("--device", type=str, default="cuda", help="Device to use")
-
-    args = parser.parse_args()
-
-    # Set log level
-    logger.setLevel(args.log_level.upper())
-    
-    if args.command == "text":
-        if not args.text:
-            text = input("Enter text description: ")
-        else:
-            text = args.text
-        
-        generate_from_text(
-            model_path=args.model,
-            text=text,
-            output_dir=args.output_dir,
-            model_type=args.model_type,
-        temperature=args.temperature,
-            top_k=args.top_k,
-            top_p=args.top_p,
-            repetition_penalty=args.repetition_penalty,
-            device=args.device
-        )
-    
-    elif args.command == "midi":
-        generate_from_midi(
-            model_path=args.model,
-            midi_file=args.midi,
-            output_dir=args.output_dir,
-            device=args.device
-        )
-    
-    elif args.command == "batch":
-        generate_from_file(
-            model_path=args.model,
-            input_file=args.input_file,
-            output_dir=args.output_dir,
-            model_type=args.model_type,
-            temperature=args.temperature,
-        top_k=args.top_k,
-        top_p=args.top_p,
-            repetition_penalty=args.repetition_penalty,
-            device=args.device
+    """Main entry point for the generation script"""
+    parser = argparse.ArgumentParser(
+        description="Generate music from text descriptions or continue existing MIDI",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-
+    
+    # Input/output arguments
+    parser.add_argument("--model-path", type=str, required=True, help="Path to trained model")
+    parser.add_argument("--output-dir", type=str, default="data/output", help="Output directory")
+    parser.add_argument("--output-name", type=str, default="generated", help="Base name for output files")
+    
+    # Generation modes
+    mode_group = parser.add_mutually_exclusive_group(required=True)
+    mode_group.add_argument("--text-to-midi", type=str, help="Text description to generate MIDI from")
+    mode_group.add_argument("--continue-midi", type=str, help="Path to MIDI file to continue")
+    mode_group.add_argument("--interactive", action="store_true", help="Interactive generation mode")
+    
+    # Generation parameters
+    parser.add_argument("--max-length", type=int, default=1024, help="Maximum sequence length to generate")
+    parser.add_argument("--temperature", type=float, default=1.0, help="Sampling temperature")
+    parser.add_argument("--top-k", type=int, default=50, help="Top-k sampling parameter")
+    parser.add_argument("--top-p", type=float, default=0.95, help="Top-p (nucleus) sampling parameter")
+    parser.add_argument("--num-samples", type=int, default=1, help="Number of samples to generate")
+    
+    # Transfer learning options
+    transfer_group = parser.add_argument_group("Transfer learning options")
+    transfer_group.add_argument("--optimal-transfer-learning", action="store_true",
+                              help="Enable optimal transfer learning settings")
+    transfer_group.add_argument("--use-optimal-models", action="store_true",
+                              help="Use optimal models (MIDI-BERT and RoBERTa) without other optimal settings")
+    transfer_group.add_argument("--use-pretrained-text-model", action="store_true",
+                              help="Use a pretrained text model")
+    transfer_group.add_argument("--pretrained-text-model-path", type=str,
+                              help="Path to a pretrained text model")
+    
+    # Other options
+    parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu",
+                      help="Device to use for generation")
+    
+    args = parser.parse_args()
+    
+    # Set random seed
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    
+    # Create output directory
+    os.makedirs(args.output_dir, exist_ok=True)
+    
+    # Check for transfer learning configuration from previous steps
+    transfer_config_path = os.path.join(os.path.dirname(args.model_path), "transfer_config.json")
+    if not os.path.exists(transfer_config_path):
+        # Try looking in the processed data directory
+        transfer_config_path = "data/processed/transfer_config.json"
+    
+    transfer_config = {}
+    if os.path.exists(transfer_config_path):
+        transfer_config = load_transfer_config(transfer_config_path)
+        
+        # If optimal transfer learning was enabled in previous steps, enable it here too
+        if transfer_config.get("optimal_transfer_learning", False) and not args.optimal_transfer_learning:
+            logger.info("Enabling optimal transfer learning based on previous configuration")
+            args.optimal_transfer_learning = True
+            
+            # Apply other settings from transfer config
+            if "pretrained_text_model_path" in transfer_config:
+                args.pretrained_text_model_path = transfer_config["pretrained_text_model_path"]
+                args.use_pretrained_text_model = True
+        
+        # If optimal models were enabled in previous steps
+        if transfer_config.get("use_optimal_models", False) and not args.use_optimal_models:
+            logger.info("Using optimal models based on previous configuration")
+            args.use_optimal_models = True
+            
+            # Apply model settings from transfer config
+            if "pretrained_text_model_path" in transfer_config:
+                args.pretrained_text_model_path = transfer_config["pretrained_text_model_path"]
+                args.use_pretrained_text_model = True
+    
+    # If optimal transfer learning is enabled, set optimal settings
+    if args.optimal_transfer_learning:
+        logger.info("Using optimal transfer learning settings")
+        args = apply_optimal_settings(args)
+    
+    # If only optimal models are requested
+    if args.use_optimal_models and not args.optimal_transfer_learning:
+        logger.info("Using optimal models without other optimal settings")
+        args.use_pretrained_text_model = True
+        if not args.pretrained_text_model_path:
+            args.pretrained_text_model_path = transfer_config.get("pretrained_text_model_path", "roberta-base")
+        logger.info(f"Using pretrained text model: {args.pretrained_text_model_path}")
+    
+    # Load model configuration
+    model_dir = os.path.dirname(args.model_path)
+    model_config_path = os.path.join(model_dir, "model_config.json")
+    
+    model_config = {}
+    if os.path.exists(model_config_path):
+        with open(model_config_path, "r") as f:
+            model_config = json.load(f)
+    
+    # Extract model parameters from config or use defaults
+    vocab_size = model_config.get("vocab_size", 10000)
+    d_model = model_config.get("d_model", 512)
+    num_heads = model_config.get("num_heads", 8)
+    num_layers = model_config.get("num_layers", 6)
+    d_ff = model_config.get("d_ff", 2048)
+    max_seq_len = model_config.get("max_seq_len", 1024)
+    
+    # If optimal transfer learning is enabled, adjust model parameters
+    if args.optimal_transfer_learning:
+        d_model = transfer_config.get("d_model", 768)  # Match RoBERTa/MIDI-BERT dimension
+        num_heads = transfer_config.get("num_heads", 12)
+        num_layers = transfer_config.get("num_layers", 8)
+        d_ff = transfer_config.get("d_ff", 3072)
+    
+    # Create model
+    logger.info(f"Creating model: vocab_size={vocab_size}, d_model={d_model}")
+    model = create_model(
+        model_type="hierarchical_transformer",
+        vocab_size=vocab_size,
+        d_model=d_model,
+        num_heads=num_heads,
+        num_layers=num_layers,
+        d_ff=d_ff,
+        max_seq_len=max_seq_len,
+        device=args.device
+    )
+    
+    # Load model weights
+    logger.info(f"Loading model weights from {args.model_path}")
+    if os.path.exists(args.model_path):
+        model.load_state_dict(torch.load(args.model_path, map_location=args.device))
     else:
-        parser.print_help()
+        logger.error(f"Model file not found: {args.model_path}")
+        return
+    
+    # Set model to evaluation mode
+    model.eval()
+    
+    # Create processors
+    midi_processor = MIDIProcessor(
+        max_sequence_length=args.max_length,
+        use_hierarchical_encoding=True
+    )
+    
+    text_processor = TextProcessor(
+        max_length=args.max_length,
+        use_pretrained_model=args.use_pretrained_text_model,
+        pretrained_model_path=args.pretrained_text_model_path,
+        optimal_transfer_learning=args.optimal_transfer_learning
+    )
+    
+    # Create generator
+    generator = Generator(
+        model=model,
+        midi_processor=midi_processor,
+        text_processor=text_processor,
+        device=args.device
+    )
+    
+    # Generate based on mode
+    if args.text_to_midi:
+        logger.info(f"Generating MIDI from text: {args.text_to_midi}")
+        
+        for i in range(args.num_samples):
+            output_path = os.path.join(args.output_dir, f"{args.output_name}_{i+1}.mid")
+            
+            # Generate MIDI
+            generator.generate_from_text(
+                text=args.text_to_midi,
+                output_path=output_path,
+                max_length=args.max_length,
+                temperature=args.temperature,
+                top_k=args.top_k,
+                top_p=args.top_p
+            )
+            
+            logger.info(f"Generated MIDI saved to {output_path}")
+    
+    elif args.continue_midi:
+        logger.info(f"Continuing MIDI from: {args.continue_midi}")
+        
+        for i in range(args.num_samples):
+            output_path = os.path.join(args.output_dir, f"{args.output_name}_{i+1}.mid")
+            
+            # Continue MIDI
+            generator.continue_midi(
+                midi_path=args.continue_midi,
+                output_path=output_path,
+                max_length=args.max_length,
+                temperature=args.temperature,
+                top_k=args.top_k,
+                top_p=args.top_p
+            )
+            
+            logger.info(f"Continued MIDI saved to {output_path}")
+    
+    elif args.interactive:
+        logger.info("Starting interactive generation mode")
+        
+        while True:
+            # Get user input
+            text = input("\nEnter text description (or 'q' to quit): ")
+            
+            if text.lower() == 'q':
+                break
+            
+            # Generate MIDI
+            output_path = os.path.join(args.output_dir, f"{args.output_name}_interactive.mid")
+            
+            generator.generate_from_text(
+                text=text,
+                output_path=output_path,
+                max_length=args.max_length,
+                temperature=args.temperature,
+                top_k=args.top_k,
+                top_p=args.top_p
+            )
+            
+            logger.info(f"Generated MIDI saved to {output_path}")
+    
+    logger.info("Generation completed")
 
 if __name__ == "__main__":
     main()

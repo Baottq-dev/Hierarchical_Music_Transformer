@@ -1,0 +1,27 @@
+{
+  "pairs": [
+    {
+      "midi_file": "data/midi_samples/nocturne.mid",
+      "text_file": "examples/midi/sample.txt",
+      "metadata": {
+        "composer": "Example Composer",
+        "title": "Nocturne in E-flat major",
+        "year": 2023
+      }
+    },
+    {
+      "midi_file": "data/midi_samples/sonata.mid",
+      "text_file": "data/text_descriptions/sonata.txt",
+      "metadata": {
+        "composer": "Example Composer",
+        "title": "Piano Sonata No. 1",
+        "year": 2023
+      }
+    }
+  ],
+  "processing_options": {
+    "use_hierarchical_encoding": true,
+    "use_contextual_embeddings": true,
+    "max_sequence_length": 1024
+  }
+} 

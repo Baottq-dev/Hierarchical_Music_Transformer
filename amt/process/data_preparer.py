@@ -75,12 +75,22 @@ class MusicTextDataset(Dataset):
             else:
                 bert_emb[: generic_arr.shape[0]] = generic_arr
 
-        return {
+        # Include fused features if available
+        fused_features = None
+        if "fused_features" in item:
+            fused_features = torch.tensor(item["fused_features"], dtype=torch.float)
+
+        result = {
             "midi_tokens": torch.tensor(tokens, dtype=torch.long),
             "bert_embedding": torch.tensor(bert_emb, dtype=torch.float),  # [768]
             "tfidf_features": torch.tensor(tfidf_feat, dtype=torch.float),  # [768]
             "sequence_length": item["sequence_length"],
         }
+        
+        if fused_features is not None:
+            result["fused_features"] = fused_features
+            
+        return result
 
 
 class DataPreparer:
@@ -92,6 +102,10 @@ class DataPreparer:
         max_text_length: int = 512,
         batch_size: int = 32,
         text_processor_use_gpu: bool = False,
+        midi_processor: Optional[MIDIProcessor] = None,
+        text_processor: Optional[TextProcessor] = None,
+        feature_fusion_method: str = "concat",
+        vocab_size: int = 10000,
     ):
         """
         Args:
@@ -101,15 +115,138 @@ class DataPreparer:
             text_processor_use_gpu: Whether to load BERT/spaCy models on GPU.
                 For most training-time usages we only need pre-computed embeddings,
                 so keeping this `False` avoids occupying precious GPU VRAM.
+            midi_processor: Optional pre-configured MIDI processor.
+            text_processor: Optional pre-configured text processor.
+            feature_fusion_method: Method for fusing features ("concat", "attention", "gated").
+            vocab_size: Vocabulary size for tokenization.
         """
         self.max_sequence_length = max_sequence_length
         self.max_text_length = max_text_length
         self.batch_size = batch_size
+        self.feature_fusion_method = feature_fusion_method
+        self.vocab_size = vocab_size
 
-        self.midi_processor = MIDIProcessor(max_sequence_length=max_sequence_length)
-        self.text_processor = TextProcessor(
+        # Use provided processors or create new ones
+        self.midi_processor = midi_processor or MIDIProcessor(max_sequence_length=max_sequence_length)
+        self.text_processor = text_processor or TextProcessor(
             max_length=max_text_length, use_gpu=text_processor_use_gpu
         )
+
+    def combine_features(self, text_features, midi_features, method="concat"):
+        """Combine features from text and MIDI"""
+        # Extract sentence embeddings
+        if isinstance(text_features, dict) and "sentence_embedding" in text_features:
+            text_embedding = text_features["sentence_embedding"]
+        elif isinstance(text_features, dict) and "bert_embedding" in text_features:
+            text_embedding = text_features["bert_embedding"]
+        else:
+            # Fallback
+            text_embedding = np.zeros(768)
+        
+        if isinstance(midi_features, dict) and "sequence_embedding" in midi_features:
+            midi_embedding = midi_features["sequence_embedding"]
+        else:
+            # Fallback
+            midi_embedding = np.zeros(512)
+        
+        # Convert to numpy arrays if they're not already
+        if not isinstance(text_embedding, np.ndarray):
+            text_embedding = np.array(text_embedding)
+        if not isinstance(midi_embedding, np.ndarray):
+            midi_embedding = np.array(midi_embedding)
+            
+        # Ensure we have 2D arrays for consistency
+        if len(text_embedding.shape) == 1:
+            text_embedding = text_embedding.reshape(1, -1)
+        if len(midi_embedding.shape) == 1:
+            midi_embedding = midi_embedding.reshape(1, -1)
+        
+        if method == "concat":
+            # Simple concatenation
+            # Pad the smaller embedding if dimensions don't match
+            if text_embedding.shape[1] != midi_embedding.shape[1]:
+                max_dim = max(text_embedding.shape[1], midi_embedding.shape[1])
+                if text_embedding.shape[1] < max_dim:
+                    padding = np.zeros((text_embedding.shape[0], max_dim - text_embedding.shape[1]))
+                    text_embedding = np.hstack([text_embedding, padding])
+                if midi_embedding.shape[1] < max_dim:
+                    padding = np.zeros((midi_embedding.shape[0], max_dim - midi_embedding.shape[1]))
+                    midi_embedding = np.hstack([midi_embedding, padding])
+            
+            return np.hstack([text_embedding, midi_embedding]).flatten()
+        
+        elif method == "attention":
+            # Attention-based fusion
+            try:
+                # Convert to torch tensors for matrix operations
+                text_tensor = torch.tensor(text_embedding, dtype=torch.float)
+                midi_tensor = torch.tensor(midi_embedding, dtype=torch.float)
+                
+                # Ensure dimensions match for attention
+                if text_tensor.shape[1] != midi_tensor.shape[1]:
+                    # Project to common dimension
+                    common_dim = 512
+                    text_tensor = torch.nn.functional.linear(
+                        text_tensor, 
+                        torch.randn(common_dim, text_tensor.shape[1]) / np.sqrt(text_tensor.shape[1])
+                    )
+                    midi_tensor = torch.nn.functional.linear(
+                        midi_tensor, 
+                        torch.randn(common_dim, midi_tensor.shape[1]) / np.sqrt(midi_tensor.shape[1])
+                    )
+                
+                # Compute attention weights
+                attn_weights = torch.softmax(torch.matmul(text_tensor, midi_tensor.transpose(0, 1)), dim=1)
+                
+                # Weighted sum
+                fused = text_tensor + torch.matmul(attn_weights, midi_tensor)
+                return fused.detach().numpy().flatten()
+            except Exception as e:
+                logger.error(f"Error in attention fusion: {e}")
+                # Fallback to concat
+                return self.combine_features(text_features, midi_features, "concat")
+        
+        elif method == "gated":
+            # Gated fusion
+            try:
+                # Convert to torch tensors
+                text_tensor = torch.tensor(text_embedding, dtype=torch.float)
+                midi_tensor = torch.tensor(midi_embedding, dtype=torch.float)
+                
+                # Ensure dimensions match
+                if text_tensor.shape[1] != midi_tensor.shape[1]:
+                    # Project to common dimension
+                    common_dim = 512
+                    text_tensor = torch.nn.functional.linear(
+                        text_tensor, 
+                        torch.randn(common_dim, text_tensor.shape[1]) / np.sqrt(text_tensor.shape[1])
+                    )
+                    midi_tensor = torch.nn.functional.linear(
+                        midi_tensor, 
+                        torch.randn(common_dim, midi_tensor.shape[1]) / np.sqrt(midi_tensor.shape[1])
+                    )
+                
+                # Compute gate
+                gate = torch.sigmoid(text_tensor + midi_tensor)
+                
+                # Gated combination
+                fused = gate * text_tensor + (1 - gate) * midi_tensor
+                return fused.detach().numpy().flatten()
+            except Exception as e:
+                logger.error(f"Error in gated fusion: {e}")
+                # Fallback to concat
+                return self.combine_features(text_features, midi_features, "concat")
+        
+        else:
+            # Default: simple average
+            if text_embedding.shape[1] != midi_embedding.shape[1]:
+                # Project to common dimension
+                common_dim = 512
+                text_embedding_resized = np.random.randn(common_dim, text_embedding.shape[1]) @ text_embedding.T
+                midi_embedding_resized = np.random.randn(common_dim, midi_embedding.shape[1]) @ midi_embedding.T
+                return ((text_embedding_resized + midi_embedding_resized) / 2).T.flatten()
+            else:
+                return ((text_embedding + midi_embedding) / 2).flatten()
 
     def load_paired_data(self, paired_data_file: str) -> List[Dict[str, Any]]:
         """Load paired data from file."""
@@ -135,6 +272,15 @@ class DataPreparer:
 
             # Process text
             text_processed = self.text_processor.process_text(text_description)
+            
+            # Combine features if fusion method is specified
+            fused_features = None
+            if self.feature_fusion_method != "none":
+                fused_features = self.combine_features(
+                    text_processed, 
+                    midi_processed.get("features", {}),
+                    method=self.feature_fusion_method
+                )
 
             # Combine into training item
             training_item = {
@@ -145,6 +291,14 @@ class DataPreparer:
                 "text_features": text_processed,
                 "sequence_length": midi_processed["sequence_length"],
             }
+            
+            # Add fused features if available
+            if fused_features is not None:
+                training_item["fused_features"] = fused_features
+                
+            # Add hierarchical info if available
+            if "hierarchical_info" in midi_processed:
+                training_item["hierarchical_info"] = midi_processed["hierarchical_info"]
 
             processed_data.append(training_item)
 

@@ -400,6 +400,47 @@ class HierarchicalMusicTransformer(nn.Module):
         
         return output
     
+    def extract_features(self, x, hierarchical_data=None):
+        """Extract features from input without generating output logits
+        
+        Args:
+            x: Input tensor of token indices [batch_size, seq_len]
+            hierarchical_data: Optional hierarchical structure data
+            
+        Returns:
+            Feature tensor [batch_size, seq_len, d_model]
+        """
+        batch_size, seq_len = x.size()
+        
+        # Token embeddings
+        x = self.token_embedding(x) * math.sqrt(self.d_model)
+        
+        # Add hierarchical embeddings if enabled
+        hierarchical_info = None
+        if self.use_hierarchical_encoding and hierarchical_data is not None:
+            hierarchical_info = self._extract_hierarchical_info(hierarchical_data)
+            
+            bar_positions = hierarchical_data.get('bar_positions')
+            if bar_positions is not None:
+                bar_pos = torch.tensor(bar_positions, device=x.device).long() % 10
+                x = x + self.bar_embedding(bar_pos)
+                
+            beat_positions = hierarchical_data.get('beat_positions')
+            if beat_positions is not None:
+                beat_pos = torch.tensor(beat_positions, device=x.device).long() % 16
+                x = x + self.beat_embedding(beat_pos)
+        
+        # Apply positional encoding
+        x = self.pos_encoding(x, hierarchical_info)
+        
+        # Apply transformer layers (all except last)
+        for i, layer in enumerate(self.transformer_blocks):
+            if i < len(self.transformer_blocks) - 1:  # Skip last layer
+                x = layer(x, None, hierarchical_info)
+        
+        # Return features
+        return x
+    
     def generate(
         self,
         prompt: torch.Tensor,
