@@ -103,9 +103,17 @@ def main():
         paired_data = json.load(f)
     
     # Initialize processors
+    # midi_processor = MIDIProcessor(
+    #     resolution=args.midi_resolution,
+    #     max_length=args.max_seq_len,
+    #     use_hierarchical_encoding=args.use_hierarchical_encoding,
+    #     use_pretrained_model=args.use_pretrained_music_model,
+    #     pretrained_model_path=args.pretrained_music_model_path
+    # )
+
     midi_processor = MIDIProcessor(
-        resolution=args.midi_resolution,
-        max_length=args.max_seq_len,
+        max_sequence_length=args.max_seq_len,  # Đổi max_length thành max_sequence_length
+        time_resolution=args.midi_resolution / 480,  # Đổi resolution thành time_resolution và điều chỉnh giá trị
         use_hierarchical_encoding=args.use_hierarchical_encoding,
         use_pretrained_model=args.use_pretrained_music_model,
         pretrained_model_path=args.pretrained_music_model_path
