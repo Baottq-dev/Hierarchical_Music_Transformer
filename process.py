@@ -136,7 +136,7 @@ def main():
     
     # Process data
     logger.info("Processing paired data")
-    processed_data = data_preparer.prepare_data(paired_data)
+    processed_data = data_preparer.process_paired_data(paired_data)
     
     # Save processed data
     output_file = os.path.join(args.output_dir, f"{args.dataset_name}_processed.json")
