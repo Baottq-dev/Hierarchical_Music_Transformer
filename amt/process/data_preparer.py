@@ -436,28 +436,28 @@ class DataPreparer:
                 for i, midi_data in enumerate(batch_midi_data):
                     if midi_data is None:
                         batch_midi_features.append(None)
-                continue
-
-                    cache_path = os.path.join(cache_dir, f"{os.path.basename(batch_midi_paths[i])}.json")
-                    try:
-                        # Set a timeout for processing each MIDI file to avoid hanging
-                        features = self.midi_processor.extract_features(midi_data, cache_path=cache_path)
-                        batch_midi_features.append(features)
-                    except Exception as e:
-                        logger.error(f"Error extracting MIDI features for {batch_midi_paths[i]}: {str(e)}")
-                        # Create default features on error to continue processing
-                        default_features = {
-                            'sequence_embedding': [0.0] * 512,  # Default embedding size
-                            'model_name': 'error_processing'
-                        }
-                        batch_midi_features.append(default_features)
-                        
-                        # Cache the default features to avoid reprocessing
+                        continue
+                    else:            
+                        cache_path = os.path.join(cache_dir, f"{os.path.basename(batch_midi_paths[i])}.json")
                         try:
-                            with open(cache_path, 'w') as f:
-                                json.dump(default_features, f)
-                        except Exception as cache_err:
-                            logger.warning(f"Error caching default features: {str(cache_err)}")
+                            # Set a timeout for processing each MIDI file to avoid hanging
+                            features = self.midi_processor.extract_features(midi_data, cache_path=cache_path)
+                            batch_midi_features.append(features)
+                        except Exception as e:
+                            logger.error(f"Error extracting MIDI features for {batch_midi_paths[i]}: {str(e)}")
+                            # Create default features on error to continue processing
+                            default_features = {
+                                'sequence_embedding': [0.0] * 512,  # Default embedding size
+                                'model_name': 'error_processing'
+                            }
+                            batch_midi_features.append(default_features)
+                            
+                            # Cache the default features to avoid reprocessing
+                            try:
+                                with open(cache_path, 'w') as f:
+                                    json.dump(default_features, f)
+                            except Exception as cache_err:
+                                logger.warning(f"Error caching default features: {str(cache_err)}")
                 
                 # Process text features in batch (if possible)
                 batch_text_features = []
