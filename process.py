@@ -10,6 +10,7 @@ import argparse
 import logging
 import sys
 import time
+import numpy as np
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
@@ -22,6 +23,27 @@ from amt.config import get_settings
 # Set up logger and settings
 logger = get_logger(__name__)
 settings = get_settings()
+
+# Hàm chuyển đổi numpy array để có thể serialize JSON
+def convert_numpy_types(obj):
+    """Convert numpy types for JSON serialization."""
+    if isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
+    elif isinstance(obj, set):
+        return list(obj)
+    elif isinstance(obj, dict):
+        return {k: convert_numpy_types(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy_types(i) for i in obj]
+    elif isinstance(obj, tuple):
+        return [convert_numpy_types(i) for i in obj]
+    return obj
 
 def apply_optimal_settings(args):
     """Apply optimal transfer learning settings to arguments"""
@@ -78,6 +100,36 @@ def main(args):
         if not hasattr(args, 'disable_cache') or not args.disable_cache:
             logger.info("Automatically disabling cache on Kaggle to save disk space")
             args.disable_cache = True
+            
+        # Limit memory usage on Kaggle
+        if args.limit_memory_usage:
+            logger.info("Limiting memory usage for Kaggle environment")
+            import gc
+            gc.collect()
+            
+            # Try to limit TensorFlow memory growth if available
+            try:
+                import tensorflow as tf
+                gpus = tf.config.experimental.list_physical_devices('GPU')
+                if gpus:
+                    for gpu in gpus:
+                        tf.config.experimental.set_memory_growth(gpu, True)
+                    logger.info("Set TensorFlow memory growth")
+            except:
+                logger.info("Could not configure TensorFlow memory growth")
+                
+            # Try to limit PyTorch memory usage
+            try:
+                import torch
+                torch.cuda.empty_cache()
+                logger.info("Cleared PyTorch CUDA cache")
+            except:
+                pass
+            
+            # Process in smaller chunks if needed
+            if not args.memory_efficient_batch_size and args.batch_size > 8:
+                logger.info(f"Reducing batch size from {args.batch_size} to 8 to save memory")
+                args.batch_size = 8
     
     # Create output directory
     os.makedirs(args.output_dir, exist_ok=True)
@@ -126,13 +178,54 @@ def main(args):
         disable_cache=args.disable_cache
     )
     
-    # Process paired data
-    processed_data = data_preparer.process_paired_data(paired_data, batch_size=args.batch_size)
+    # Process paired data, potentially in chunks to save memory
+    processed_data = []
+    if args.process_in_chunks:
+        logger.info(f"Processing data in chunks of {args.chunk_size} to save memory")
+        
+        # Get total number of items to process
+        total_items = len(paired_data if isinstance(paired_data, list) else paired_data.get('pairs', []))
+        
+        # Process in chunks
+        for chunk_start in range(0, total_items, args.chunk_size):
+            chunk_end = min(chunk_start + args.chunk_size, total_items)
+            logger.info(f"Processing chunk {chunk_start+1}-{chunk_end} of {total_items}")
+            
+            # Extract chunk
+            chunk_data = paired_data[chunk_start:chunk_end]
+            
+            # Process chunk
+            chunk_processed = data_preparer.process_paired_data(chunk_data, batch_size=args.batch_size)
+            processed_data.extend(chunk_processed)
+            
+            # Force garbage collection to free memory
+            import gc
+            gc.collect()
+            
+            # Try to clear PyTorch cache
+            try:
+                import torch
+                torch.cuda.empty_cache()
+            except:
+                pass
+            
+            logger.info(f"Completed chunk {chunk_start+1}-{chunk_end}, processed {len(chunk_processed)} items")
+            
+            # Save intermediate results
+            if args.save_intermediate_chunks:
+                chunk_output_file = os.path.join(args.output_dir, f"{args.dataset_name}_chunk_{chunk_start+1}_{chunk_end}.json")
+                with open(chunk_output_file, 'w') as f:
+                    json.dump(convert_numpy_types(chunk_processed), f)
+                logger.info(f"Saved intermediate chunk to {chunk_output_file}")
+    else:
+        # Process all data at once
+        processed_data = data_preparer.process_paired_data(paired_data, batch_size=args.batch_size)
     
     # Save processed data
     output_file = os.path.join(args.output_dir, f"{args.dataset_name}.json")
     with open(output_file, 'w') as f:
-        json.dump(processed_data, f)
+        # Sử dụng hàm convert_numpy_types để chuyển đổi numpy types trước khi lưu
+        json.dump(convert_numpy_types(processed_data), f)
     
     logger.info(f"Processed {len(processed_data)} items")
     logger.info(f"Saved processed data to {output_file}")
@@ -185,6 +278,18 @@ if __name__ == "__main__":
                         help="Use mixed precision (FP16) for faster processing on GPU")
     parser.add_argument("--disable-cache", action="store_true",
                         help="Disable caching of processed files to save disk space")
+    parser.add_argument("--process-in-chunks", action="store_true",
+                        help="Process data in smaller chunks to avoid memory issues")
+    parser.add_argument("--chunk-size", type=int, default=1000,
+                        help="Size of chunks when processing in chunks")
+    parser.add_argument("--save-intermediate-chunks", action="store_true",
+                        help="Save intermediate chunks to disk")
+    
+    # Memory management arguments
+    parser.add_argument("--limit-memory-usage", action="store_true",
+                      help="Limit memory usage for environments with restricted RAM (like Kaggle)")
+    parser.add_argument("--memory-efficient-batch-size", action="store_true",
+                      help="Don't automatically reduce batch size even when limiting memory")
     
     args = parser.parse_args()
     main(args) 
