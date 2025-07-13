@@ -15,7 +15,7 @@ import torch
 
 from amt.utils.logging import get_logger
 from amt.config import get_settings
-from amt.process.midi_processor import MIDIProcessor
+from amt.process.midi_processor import MidiProcessor
 from amt.process.text_processor import TextProcessor
 
 # Set up logger
@@ -308,7 +308,7 @@ def continue_from_checkpoint(
     # Initialize MIDI processor if needed
     if not processed_midi or len(processed_midi) < len(paired_data):
         # Initialize MIDI processor
-        midi_processor = MIDIProcessor(
+        midi_processor = MidiProcessor(
             max_sequence_length=settings.max_sequence_length,
             use_cache=use_cache,
             cache_dir=os.path.join(output_dir, "cache/midi"),

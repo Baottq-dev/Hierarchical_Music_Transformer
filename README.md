@@ -1,116 +1,103 @@
-# AMT - Automated Music Transcription
+# Automatic Music Transcription (AMT) Project
 
-AMT is a project that focuses on automated music transcription and generation using transformer-based models. It can convert between MIDI music files and text descriptions, enabling both music-to-text and text-to-music generation.
+This project provides tools for automatic music transcription and processing of MIDI files, with emphasis on using pretrained models for music understanding.
 
-## Features
+## Requirements
 
-- Convert MIDI music to text descriptions
-- Generate MIDI music from text descriptions
-- Hierarchical music representation
-- Advanced transformer architecture
-- Transfer learning support for improved performance
+- Python 3.8+
+- PyTorch 1.10+
+- Transformers 4.27+
+- Additional dependencies in `requirements.txt`
 
 ## Installation
 
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/AMT.git
-cd AMT
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Install the package in development mode
-pip install -e .
-```
-
-## Usage
-
-AMT follows a pipeline approach:
-
-1. **Collect data**: Gather MIDI files and text descriptions
-2. **Process data**: Convert MIDI and text into model-compatible formats
-3. **Train models**: Train the transformer models
-4. **Generate music**: Generate MIDI from text or text from MIDI
-5. **Evaluate**: Evaluate model performance
-
-### Data Collection
-
-```bash
-python collect.py --midi-dir path/to/midi/files --output-file data/collected_data.json
-```
-
-### Data Processing
-
-```bash
-python process.py single --midi-file path/to/midi/file.mid --text-file path/to/description.txt --output-dir data/processed
-```
-
-Or for batch processing:
-
-```bash
-python process.py paired --paired-data-file data/collected_data.json --output-dir data/processed
-```
-
-### Training
-
-```bash
-python train.py --paired-data-file data/processed/paired_data.json --output-dir models
-```
-
-### Transfer Learning
-
-AMT now supports transfer learning to improve model performance:
-
-#### Text Model Transfer Learning
-
-```bash
-# Process data with a pre-trained text model
-python process.py paired --paired-data-file data/collected_data.json --output-dir data/processed --use-pretrained-text-model --pretrained-text-model-path models/pretrained_bert
-
-# Fine-tune the text model on music descriptions
-python process.py paired --paired-data-file data/collected_data.json --output-dir data/processed --use-pretrained-text-model --pretrained-text-model-path models/pretrained_bert --enable-text-fine-tuning
-```
-
-#### Music Model Transfer Learning
-
-```bash
-# Train with a pre-trained music model
-python train.py --paired-data-file data/processed/paired_data.json --output-dir models --pretrained-model models/checkpoints/pretrained_model.pt --transfer-learning-mode fine_tuning --freeze-layers 3
-```
-
-Transfer learning modes:
-- `feature_extraction`: Freezes all layers except output layer
-- `fine_tuning`: Freezes a specified number of layers
-- `full_fine_tuning`: All layers are trainable
-
-### Generation
-
-```bash
-python generate.py --model-path models/checkpoints/model.pt --text "A cheerful piano melody with jazz influences"
-```
+1. Clone this repository
+2. Install dependencies: `pip install -r requirements.txt`
+3. Download language model for spaCy: `python -m spacy download en_core_web_sm`
 
 ## Project Structure
 
-- `amt/`: Main package directory
-  - `collect/`: Data collection modules
-  - `process/`: Data processing modules
-  - `train/`: Model training modules
-  - `generate/`: Music generation modules
-  - `evaluate/`: Evaluation modules
-  - `models/`: Model architecture definitions
-  - `utils/`: Utility functions
+- `amt/`: Core package
+  - `collect/`: Tools for collecting MIDI data
+  - `process/`: Tools for processing MIDI and text
+  - `evaluate/`: Evaluation tools
+  - `generate/`: Generation tools
+  - `models/`: Model definitions
+  - `train/`: Training code
+- `data/`: Data storage
+  - `midi/`: MIDI files
+  - `processed/`: Processed data
+  - `output/`: Output files
+- `examples/`: Example files and notebooks
 
-## Documentation
+## Paired Data Format
 
-For more detailed documentation, see the `docs/` directory:
+The paired data JSON file should have a structure like:
 
-- [Project Overview](docs/project_overview.md)
-- [Running Guide](docs/running_guide.md)
-- [Model Deep Dive](docs/05_model_deep_dive.md)
-- [Configuration](docs/configuration.md)
-- [Checkpoint System](docs/checkpoint_system.md)
+```json
+{
+  "pairs": [
+    {
+      "midi_file": "data/midi/artist/song.mid",
+      "text_file": "path/to/description.txt",
+      "metadata": {
+        "composer": "Example Composer",
+        "title": "Piano Sonata No. 1",
+        "year": 2023
+      }
+    },
+    ...
+  ],
+  "processing_options": {
+    "use_hierarchical_encoding": true,
+    "use_contextual_embeddings": true,
+    "max_sequence_length": 1024
+  }
+}
+```
+
+The system also accepts a direct array of pairs or objects with direct `text` field instead of `text_file`.
+
+## Usage
+
+### Processing MIDI Files
+
+To process paired data using the default settings:
+
+```bash
+python process.py --paired-data-file examples/paired_data_sample.json --output-dir data/processed
+```
+
+### Using with MERT
+
+This project now uses MERT (Music undERstanding model with large-scale self-supervised Training) from m-a-p for enhanced music understanding:
+
+```bash
+# Enable MERT explicitly
+python process.py --paired-data-file examples/paired_data_sample.json --use-pretrained-music-model --pretrained-music-model-path m-a-p/MERT-v1-95M
+```
+
+Or use the optimal transfer learning settings:
+
+```bash
+python process.py --paired-data-file examples/paired_data_sample.json --optimal-transfer-learning
+```
+
+### Kaggle Support
+
+The project automatically detects when running in a Kaggle environment and adjusts paths accordingly.
+
+## Models
+
+The project supports several pretrained models:
+
+- **MERT** (m-a-p/MERT-v1-95M): A self-supervised learning model for music audio that uses a combination of RVQ-VAE and CQT-based teacher models
+- **RoBERTa** (roberta-base): For text processing and understanding
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-[MIT License](LICENSE) 
+This project is licensed under the MIT License - see the LICENSE file for details. 

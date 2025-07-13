@@ -7,7 +7,7 @@ import pytest
 import json
 import numpy as np
 
-from amt.process import MIDIProcessor, TextProcessor, DataPreparer
+from amt.process import MidiProcessor, TextProcessor, DataPreparer
 
 
 def json_serializable(obj):
@@ -29,7 +29,7 @@ class TestProcessingPipeline:
     def test_midi_to_tokens_pipeline(self, simple_midi_file, temp_dir):
         """Test the pipeline from MIDI file to tokens."""
         # Initialize processor
-        processor = MIDIProcessor(use_cache=False)
+        processor = MidiProcessor(use_cache=False)
         
         # Process MIDI file
         result = processor.process_midi_file(simple_midi_file)
@@ -63,7 +63,7 @@ class TestProcessingPipeline:
             f.write("This is a test description for a simple piano melody.")
         
         # Initialize processors
-        midi_processor = MIDIProcessor(use_cache=False)
+        midi_processor = MidiProcessor(use_cache=False)
         text_processor = TextProcessor(use_cache=False)
         
         # Process MIDI file

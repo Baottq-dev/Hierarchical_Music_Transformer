@@ -259,7 +259,7 @@ class TextProcessor:
                 logger.info("Falling back to default BERT model")
                 self._initialize_bert()
 
-    def extract_features_with_pretrained(self, text):
+    def extract_features(self, text):
         """Extract features using pretrained model"""
         if not hasattr(self, 'pretrained_model') or self.pretrained_model is None:
             return self.extract_features_default(text)
@@ -369,7 +369,7 @@ class TextProcessor:
         """Process text into tokens and features"""
         # Extract features based on available models
         if self.use_pretrained_model and hasattr(self, 'pretrained_model') and self.pretrained_model is not None:
-            features = self.extract_features_with_pretrained(text)
+            features = self.extract_features(text)
         elif self.use_bert and hasattr(self, 'bert_model') and self.bert_model is not None:
             features = self.get_bert_embedding(text)
         else:

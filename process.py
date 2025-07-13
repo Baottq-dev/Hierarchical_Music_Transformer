@@ -8,11 +8,13 @@ import os
 import json
 import argparse
 import logging
+import sys
+import time
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
 from amt.process.data_preparer import DataPreparer
-from amt.process.midi_processor import MIDIProcessor
+from amt.process.midi_processor import MidiProcessor
 from amt.process.text_processor import TextProcessor
 from amt.utils.logging import get_logger
 from amt.config import get_settings
@@ -27,146 +29,152 @@ def apply_optimal_settings(args):
     args.pretrained_text_model_path = args.pretrained_text_model_path or "roberta-base"
     args.enable_text_fine_tuning = True
     args.use_pretrained_music_model = True
-    args.pretrained_music_model_path = args.pretrained_music_model_path or "sander-wood/midi-bert"
+    args.pretrained_music_model_path = args.pretrained_music_model_path or "m-a-p/MERT-v1-95M"
     args.feature_fusion_method = "attention"
     args.use_hierarchical_encoding = True
     args.use_relative_attention = True
     args.max_seq_len = 1024
     
-    logger.info("Using optimal transfer learning settings with MIDI-BERT and RoBERTa-base")
+    logger.info("Using optimal transfer learning settings with MERT and RoBERTa-base")
     return args
 
-def main():
-    """Main entry point for the processing script"""
-    parser = argparse.ArgumentParser(
-        description="Process paired MIDI and text data",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
-    )
+def detect_kaggle_environment():
+    """Detect if running in Kaggle environment and log appropriate information"""
+    if os.path.exists("/kaggle/input"):
+        logger.info("Kaggle environment detected!")
+        
+        # Look for MIDI files in standard Kaggle locations
+        possible_paths = [
+            "/kaggle/input/midi-dataset/midi",
+            "/kaggle/input/your-dataset/midi",
+            "/kaggle/input/lakh-midi-dataset/midi",
+            "/kaggle/input/midi-files/midi",
+            "/kaggle/working/data/midi"
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                file_count = sum(1 for _ in Path(path).glob('**/*.mid'))
+                logger.info(f"Found {file_count} MIDI files in {path}")
+                
+        return True
+    return False
+
+def main(args):
+    """Main entry point"""
+    start_time = time.time()
     
-    # Input/output arguments
-    parser.add_argument("--paired-data-file", type=str, help="Path to JSON file with paired MIDI and text data")
-    parser.add_argument("--output-dir", type=str, default="data/processed", help="Output directory")
-    parser.add_argument("--dataset-name", type=str, default="music_dataset", help="Name of the dataset")
+    print("Starting process.py main function...")
+    print(f"Python version: {sys.version}")
+    print(f"Arguments: {args}")
     
-    # Processing arguments
-    parser.add_argument("--max-seq-len", type=int, default=1024, help="Maximum sequence length")
-    parser.add_argument("--vocab-size", type=int, default=10000, help="Vocabulary size")
-    parser.add_argument("--midi-resolution", type=int, default=480, help="MIDI resolution (ticks per quarter note)")
-    parser.add_argument("--no-augment", dest="augment", action="store_false", help="Disable data augmentation")
-    parser.add_argument("--no-hierarchical-encoding", dest="use_hierarchical_encoding", action="store_false", 
-                      help="Disable hierarchical token encoding")
-    parser.add_argument("--no-relative-attention", dest="use_relative_attention", action="store_false",
-                      help="Disable relative position attention")
-    
-    # Transfer learning options
-    transfer_group = parser.add_argument_group("Transfer learning options")
-    transfer_group.add_argument("--optimal-transfer-learning", action="store_true",
-                              help="Enable optimal transfer learning settings across all steps")
-    transfer_group.add_argument("--use-optimal-models", action="store_true",
-                              help="Use optimal models (MIDI-BERT and RoBERTa) without other optimal settings")
-    transfer_group.add_argument("--use-pretrained-text-model", action="store_true",
-                              help="Use a pretrained text model for fine-tuning")
-    transfer_group.add_argument("--pretrained-text-model-path", type=str,
-                              help="Path to a pretrained text model for fine-tuning")
-    transfer_group.add_argument("--enable-text-fine-tuning", action="store_true",
-                              help="Enable fine-tuning of the text model")
-    transfer_group.add_argument("--use-pretrained-music-model", action="store_true",
-                              help="Use a pretrained music model")
-    transfer_group.add_argument("--pretrained-music-model-path", type=str,
-                              help="Path to a pretrained music model")
-    transfer_group.add_argument("--feature-fusion-method", type=str, choices=["concat", "attention", "gated"],
-                              default="concat", help="Method for fusing features")
-    
-    args = parser.parse_args()
-    
-    if args.paired_data_file is None:
-        parser.error("--paired-data-file is required")
+    # Check for Kaggle environment
+    is_kaggle = os.path.exists("/kaggle/input")
+    if is_kaggle:
+        logger.info("Kaggle environment detected!")
+        logger.info("Running in Kaggle compatibility mode")
     
     # Create output directory
     os.makedirs(args.output_dir, exist_ok=True)
     
-    # If optimal transfer learning is enabled, set optimal settings
+    # Load paired data
+    logger.info(f"Loading paired data from {args.paired_data_file}")
+    with open(args.paired_data_file, 'rb') as f:
+        paired_data = json.loads(f.read().decode('utf-8'))
+    logger.info(f"Loaded {len(paired_data if isinstance(paired_data, list) else paired_data.get('pairs', []))} paired data items")
+    
+    # Limit number of samples if specified
+    if args.max_samples is not None and args.max_samples > 0:
+        logger.info(f"Limiting to {args.max_samples} samples for testing")
+        paired_data = paired_data[:args.max_samples]
+    
+    # Apply optimal settings if requested
     if args.optimal_transfer_learning:
         args = apply_optimal_settings(args)
     
-    # If only optimal models are requested
-    if args.use_optimal_models:
-        args.use_pretrained_text_model = True
-        args.pretrained_text_model_path = args.pretrained_text_model_path or "roberta-base"
-        args.use_pretrained_music_model = True
-        args.pretrained_music_model_path = args.pretrained_music_model_path or "sander-wood/midi-bert"
-        logger.info("Using optimal models: MIDI-BERT and RoBERTa-base")
-    
-    # Load paired data
-    logger.info(f"Loading paired data from {args.paired_data_file}")
-    with open(args.paired_data_file, "r") as f:
-        paired_data = json.load(f)
-    
-    # Initialize processors
-    # midi_processor = MIDIProcessor(
-    #     resolution=args.midi_resolution,
-    #     max_length=args.max_seq_len,
-    #     use_hierarchical_encoding=args.use_hierarchical_encoding,
-    #     use_pretrained_model=args.use_pretrained_music_model,
-    #     pretrained_model_path=args.pretrained_music_model_path
-    # )
-
-    midi_processor = MIDIProcessor(
-        max_sequence_length=args.max_seq_len,  # Đổi max_length thành max_sequence_length
-        time_resolution=args.midi_resolution / 480,  # Đổi resolution thành time_resolution và điều chỉnh giá trị
-        use_hierarchical_encoding=args.use_hierarchical_encoding,
+    # Initialize MIDI processor
+    midi_processor = MidiProcessor(
+        max_sequence_length=args.max_seq_len,
         use_pretrained_model=args.use_pretrained_music_model,
-        pretrained_model_path=args.pretrained_music_model_path
+        pretrained_model_path=args.pretrained_music_model_path if args.use_pretrained_music_model else None,
+        use_hierarchical_encoding=args.use_hierarchical_encoding,
+        device=args.device,
+        use_mixed_precision=args.use_mixed_precision
     )
     
+    # Initialize text processor
     text_processor = TextProcessor(
-        max_length=args.max_seq_len,
-        use_pretrained_model=args.use_pretrained_text_model,
-        pretrained_model_path=args.pretrained_text_model_path,
-        enable_fine_tuning=args.enable_text_fine_tuning
+        pretrained_model_path=args.pretrained_text_model_path if args.use_pretrained_text_model else None,
+        enable_fine_tuning=args.enable_text_fine_tuning,
+        use_gpu=(args.device == "cuda")
     )
     
+    # Initialize data preparer
     data_preparer = DataPreparer(
         midi_processor=midi_processor,
         text_processor=text_processor,
-        max_sequence_length=args.max_seq_len,
-        vocab_size=args.vocab_size,
-        feature_fusion_method=args.feature_fusion_method
+        feature_fusion_method=args.feature_fusion_method,
+        output_dir=args.output_dir,
+        is_kaggle=is_kaggle
     )
     
-    # Process data
-    logger.info("Processing paired data")
-    processed_data = data_preparer.process_paired_data(paired_data)
+    # Process paired data
+    processed_data = data_preparer.process_paired_data(paired_data, batch_size=args.batch_size)
     
     # Save processed data
-    output_file = os.path.join(args.output_dir, f"{args.dataset_name}_processed.json")
-    logger.info(f"Saving processed data to {output_file}")
-    with open(output_file, "w") as f:
-        json.dump(processed_data, f, indent=2)
+    output_file = os.path.join(args.output_dir, f"{args.dataset_name}.json")
+    with open(output_file, 'w') as f:
+        json.dump(processed_data, f)
     
-    # Save transfer learning configuration
-    transfer_config = {
-        "optimal_transfer_learning": args.optimal_transfer_learning,
-        "use_optimal_models": args.use_optimal_models,
-        "use_pretrained_text_model": args.use_pretrained_text_model,
-        "pretrained_text_model_path": args.pretrained_text_model_path,
-        "enable_text_fine_tuning": args.enable_text_fine_tuning,
-        "use_pretrained_music_model": args.use_pretrained_music_model,
-        "pretrained_music_model_path": args.pretrained_music_model_path,
-        "feature_fusion_method": args.feature_fusion_method,
-        "use_hierarchical_encoding": args.use_hierarchical_encoding,
-        "use_relative_attention": args.use_relative_attention,
-        "max_seq_len": args.max_seq_len
-    }
-
-    # Lưu cấu hình vào file JSON
-    transfer_config_path = os.path.join(args.output_dir, "transfer_config.json")
-    with open(transfer_config_path, "w") as f:
-        json.dump(transfer_config, f, indent=2)
-
-    logger.info(f"Transfer learning configuration saved to {transfer_config_path}")
-    
-    logger.info("Processing completed")
+    logger.info(f"Processed {len(processed_data)} items")
+    logger.info(f"Saved processed data to {output_file}")
+    logger.info(f"Processing completed in {time.time() - start_time:.2f} seconds")
 
 if __name__ == "__main__":
-    main() 
+    parser = argparse.ArgumentParser(description="Process paired MIDI and text data")
+    
+    # Input/output arguments
+    parser.add_argument("--paired-data-file", type=str, required=True, 
+                        help="Path to paired data JSON file")
+    parser.add_argument("--output-dir", type=str, default="data/processed",
+                        help="Output directory for processed data")
+    parser.add_argument("--dataset-name", type=str, default="processed_dataset",
+                        help="Name of the processed dataset")
+    
+    # Model arguments
+    parser.add_argument("--use-pretrained-text-model", action="store_true",
+                        help="Use pretrained text model")
+    parser.add_argument("--pretrained-text-model-path", type=str, default=None,
+                        help="Path to pretrained text model")
+    parser.add_argument("--enable-text-fine-tuning", action="store_true",
+                        help="Enable fine-tuning of text model")
+    parser.add_argument("--use-pretrained-music-model", action="store_true",
+                        help="Use pretrained music model")
+    parser.add_argument("--pretrained-music-model-path", type=str, default=None,
+                        help="Path to pretrained music model")
+    
+    # Processing arguments
+    parser.add_argument("--feature-fusion-method", type=str, default="attention",
+                        choices=["none", "concat", "attention", "gated"],
+                        help="Method to fuse text and music features")
+    parser.add_argument("--use-hierarchical-encoding", action="store_true",
+                        help="Use hierarchical encoding for MIDI")
+    parser.add_argument("--use-relative-attention", action="store_true",
+                        help="Use relative attention for MIDI")
+    parser.add_argument("--max-seq-len", type=int, default=1024,
+                        help="Maximum sequence length for MIDI")
+    
+    # Optimization arguments
+    parser.add_argument("--optimal-transfer-learning", action="store_true",
+                        help="Use optimal transfer learning settings")
+    parser.add_argument("--device", type=str, default="cpu",
+                        help="Device to use for processing (cpu, cuda)")
+    parser.add_argument("--max-samples", type=int, default=None,
+                        help="Maximum number of samples to process (for testing)")
+    parser.add_argument("--batch-size", type=int, default=16,
+                        help="Batch size for processing paired data")
+    parser.add_argument("--use-mixed-precision", action="store_true",
+                        help="Use mixed precision (FP16) for faster processing on GPU")
+    
+    args = parser.parse_args()
+    main(args) 

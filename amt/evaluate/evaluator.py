@@ -11,7 +11,7 @@ from typing import Dict, List, Any, Optional, Tuple
 import pretty_midi
 
 from amt.evaluate.metrics import EvaluationMetrics
-from amt.process.midi_processor import MIDIProcessor
+from amt.process.midi_processor import MidiProcessor
 
 
 class ModelEvaluator:

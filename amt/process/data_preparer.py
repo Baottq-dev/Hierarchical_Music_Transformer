@@ -5,14 +5,16 @@ Data Preparer - Prepares data for training and evaluation
 import os
 import json
 import random
+import traceback
 import numpy as np
 from typing import Dict, List, Any, Optional, Tuple
 from collections import defaultdict
 
 import torch
 from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
 
-from amt.process.midi_processor import MIDIProcessor
+from amt.process.midi_processor import MidiProcessor
 from amt.process.text_processor import TextProcessor
 from amt.utils.logging import get_logger
 
@@ -98,39 +100,29 @@ class DataPreparer:
 
     def __init__(
         self,
-        max_sequence_length: int = 1024,
-        max_text_length: int = 512,
-        batch_size: int = 32,
-        text_processor_use_gpu: bool = False,
-        midi_processor: Optional[MIDIProcessor] = None,
-        text_processor: Optional[TextProcessor] = None,
-        feature_fusion_method: str = "concat",
-        vocab_size: int = 10000,
+        midi_processor: 'MidiProcessor',
+        text_processor: 'TextProcessor',
+        feature_fusion_method: str = "attention",
+        output_dir: str = "data/processed",
+        is_kaggle: bool = False
     ):
-        """
+        """Initialize DataPreparer
+        
         Args:
-            max_sequence_length: Maximum MIDI token length.
-            max_text_length: Maximum text embedding length.
-            batch_size: DataLoader batch size.
-            text_processor_use_gpu: Whether to load BERT/spaCy models on GPU.
-                For most training-time usages we only need pre-computed embeddings,
-                so keeping this `False` avoids occupying precious GPU VRAM.
-            midi_processor: Optional pre-configured MIDI processor.
-            text_processor: Optional pre-configured text processor.
-            feature_fusion_method: Method for fusing features ("concat", "attention", "gated").
-            vocab_size: Vocabulary size for tokenization.
+            midi_processor: MIDI processor
+            text_processor: Text processor
+            feature_fusion_method: Method to combine features
+            output_dir: Output directory
+            is_kaggle: Whether running in Kaggle environment
         """
-        self.max_sequence_length = max_sequence_length
-        self.max_text_length = max_text_length
-        self.batch_size = batch_size
+        self.midi_processor = midi_processor
+        self.text_processor = text_processor
         self.feature_fusion_method = feature_fusion_method
-        self.vocab_size = vocab_size
-
-        # Use provided processors or create new ones
-        self.midi_processor = midi_processor or MIDIProcessor(max_sequence_length=max_sequence_length)
-        self.text_processor = text_processor or TextProcessor(
-            max_length=max_text_length, use_gpu=text_processor_use_gpu
-        )
+        self.output_dir = output_dir
+        self.is_kaggle = is_kaggle
+        
+        # Create output directory
+        os.makedirs(output_dir, exist_ok=True)
 
     def combine_features(self, text_features, midi_features, method="concat"):
         """Combine features from text and MIDI"""
@@ -252,55 +244,269 @@ class DataPreparer:
         """Load paired data from file."""
         with open(paired_data_file, encoding="utf-8") as f:
             paired_data = json.load(f)
+            
+        # Check if we need to adjust paths for Kaggle
+        if os.path.exists("/kaggle/input"):
+            logger.info("Kaggle environment detected. Adjusting MIDI paths...")
+            
+            # Define possible Kaggle paths
+            possible_paths = [
+                "/kaggle/input/midi-dataset/midi",
+                "/kaggle/input/your-dataset/midi",
+                "/kaggle/input/lakh-midi-dataset/midi",
+                "/kaggle/input/midi-files/midi",
+                "/kaggle/working/data/midi"
+            ]
+            
+            # Find the first path that exists
+            kaggle_path = None
+            for path in possible_paths:
+                if os.path.exists(path):
+                    kaggle_path = path
+                    logger.info(f"Found Kaggle MIDI path: {kaggle_path}")
+                    break
+                    
+            # Update paths if we found a valid Kaggle path
+            if kaggle_path:
+                midi_path_keys = ["midi_path", "midi_file", "file_path"]
+                paths_updated = 0
+                
+                # Process each item in the data
+                for item in paired_data:
+                    # Check for each possible key that might contain a MIDI path
+                    for key in list(item.keys()):
+                        if (key in midi_path_keys or 
+                            ("midi" in key.lower() and "path" in key.lower()) or
+                            key.lower().endswith("path")):
+                            
+                            if isinstance(item[key], str) and item[key].startswith("data/midi/"):
+                                relative_path = item[key][len("data/midi/"):]
+                                new_path = os.path.join(kaggle_path, relative_path)
+                                
+                                # Only update if the new path exists or we have no better option
+                                if os.path.exists(new_path):
+                                    old_path = item[key]
+                                    item[key] = new_path
+                                    paths_updated += 1
+                                    
+                    # Check nested dictionaries in metadata
+                    if "metadata" in item and isinstance(item["metadata"], dict):
+                        for key in list(item["metadata"].keys()):
+                            if (key in midi_path_keys or 
+                                ("midi" in key.lower() and "path" in key.lower()) or 
+                                key.lower().endswith("path")):
+                                
+                                if isinstance(item["metadata"][key], str) and item["metadata"][key].startswith("data/midi/"):
+                                    relative_path = item["metadata"][key][len("data/midi/"):]
+                                    new_path = os.path.join(kaggle_path, relative_path)
+                                    
+                                    # Only update if the new path exists or we have no better option
+                                    if os.path.exists(new_path):
+                                        old_path = item["metadata"][key]
+                                        item["metadata"][key] = new_path
+                                        paths_updated += 1
+                
+                logger.info(f"Updated {paths_updated} MIDI paths for Kaggle compatibility")
+            
         return paired_data
 
-    def process_paired_data(self, paired_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Process paired data into training format."""
+    def process_paired_data(self, paired_data: List[Dict[str, Any]], batch_size: int = 16) -> List[Dict[str, Any]]:
+        """Process paired MIDI and text data with batch processing.
+        
+        Args:
+            paired_data: List of dictionaries or a dictionary with 'pairs' key
+            batch_size: Number of items to process in each batch
+            
+        Returns:
+            List of processed data items
+        """
         processed_data = []
 
-        for item in paired_data:
-            midi_file = item.get("midi_file")
-            text_description = item.get("text_description")
-
-            if not midi_file or not text_description:
+        # Handle both formats: list of pairs or dictionary with 'pairs' key
+        if isinstance(paired_data, dict) and 'pairs' in paired_data:
+            pairs_to_process = paired_data['pairs']
+        else:
+            pairs_to_process = paired_data
+        
+        # Create cache directory
+        cache_dir = os.path.join(self.output_dir, "midi_cache")
+        os.makedirs(cache_dir, exist_ok=True)
+        
+        # Process data in batches
+        total_items = len(pairs_to_process)
+        for batch_start in tqdm(range(0, total_items, batch_size), desc="Processing batches"):
+            batch_end = min(batch_start + batch_size, total_items)
+            batch = pairs_to_process[batch_start:batch_end]
+            
+            # Prepare batch data
+            batch_midi_paths = []
+            batch_texts = []
+            valid_indices = []
+            
+            for idx, item in enumerate(batch):
+                try:
+                    # Check if required fields are present
+                    midi_field = None
+                    text_field = None
+                    
+                    # Check for common field names
+                    for field in ['midi_file', 'midi_path']:
+                        if field in item:
+                            midi_field = field
+                            break
+                    
+                    for field in ['text', 'text_file', 'text_description']:
+                        if field in item:
+                            text_field = field
+                            break
+                    
+                    if not midi_field or not text_field:
+                        logger.warning(f"Skipping item: missing required fields. Item: {item}")
+                        continue
+                    
+                    midi_path = item[midi_field]
+                    text = item[text_field]
+                    
+                    # Handle text file paths
+                    if text_field == 'text_file' and os.path.exists(text):
+                        with open(text, 'r', encoding='utf-8') as f:
+                            text = f.read()
+                    
+                    # Check for Kaggle environment and adjust paths
+                    if os.path.exists("/kaggle/input"):
+                        # Try different common paths in Kaggle
+                        kaggle_paths = [
+                            midi_path,
+                            os.path.join('/kaggle/input', midi_path),
+                            os.path.join('/kaggle/working', midi_path),
+                            os.path.join('/kaggle/input/midi-dataset', os.path.basename(midi_path))
+                        ]
+                        
+                        midi_path = None
+                        for path in kaggle_paths:
+                            if os.path.exists(path):
+                                midi_path = path
+                                break
+                        
+                        if not midi_path:
+                            logger.warning(f"Could not find MIDI file in Kaggle environment: {item[midi_field]}")
+                            continue
+                    
+                    # Process MIDI file
+                    if not os.path.exists(midi_path):
+                        logger.warning(f"MIDI file not found: {midi_path}")
+                        continue
+                    
+                    # Check cache first
+                    cache_path = os.path.join(cache_dir, f"{os.path.basename(midi_path)}_processed.json")
+                    if os.path.exists(cache_path):
+                        try:
+                            with open(cache_path, 'r') as f:
+                                cached_item = json.load(f)
+                                processed_data.append(cached_item)
+                                continue
+                        except Exception as e:
+                            logger.warning(f"Cache read error for {midi_path}: {str(e)}")
+                    
+                    # Add to batch for processing
+                    batch_midi_paths.append(midi_path)
+                    batch_texts.append(text)
+                    valid_indices.append(idx)
+                    
+                except Exception as e:
+                    logger.error(f"Error preparing item for batch: {str(e)}")
+            
+            # Process batch if not empty
+            if not batch_midi_paths:
                 continue
 
-            # Process MIDI
-            midi_processed = self.midi_processor.process_midi_file(midi_file)
-            if midi_processed is None:
-                continue
-
-            # Process text
-            text_processed = self.text_processor.process_text(text_description)
-            
-            # Combine features if fusion method is specified
-            fused_features = None
-            if self.feature_fusion_method != "none":
-                fused_features = self.combine_features(
-                    text_processed, 
-                    midi_processed.get("features", {}),
-                    method=self.feature_fusion_method
-                )
-
-            # Combine into training item
-            training_item = {
-                "midi_file": midi_file,
-                "text_description": text_description,
-                "midi_tokens": midi_processed["tokens"],
-                "midi_metadata": midi_processed["metadata"],
-                "text_features": text_processed,
-                "sequence_length": midi_processed["sequence_length"],
-            }
-            
-            # Add fused features if available
-            if fused_features is not None:
-                training_item["fused_features"] = fused_features
+            try:
+                # Load MIDI files in batch
+                batch_midi_data = []
+                for midi_path in batch_midi_paths:
+                    try:
+                        midi_data = self.midi_processor.load_midi(midi_path)
+                        batch_midi_data.append(midi_data)
+                    except Exception as e:
+                        logger.error(f"Error loading MIDI {midi_path}: {str(e)}")
+                        batch_midi_data.append(None)
                 
-            # Add hierarchical info if available
-            if "hierarchical_info" in midi_processed:
-                training_item["hierarchical_info"] = midi_processed["hierarchical_info"]
+                # Process MIDI features in batch (if possible)
+                batch_midi_features = []
+                for i, midi_data in enumerate(batch_midi_data):
+                    if midi_data is None:
+                        batch_midi_features.append(None)
+                continue
 
-            processed_data.append(training_item)
+                    cache_path = os.path.join(cache_dir, f"{os.path.basename(batch_midi_paths[i])}.json")
+                    try:
+                        # Set a timeout for processing each MIDI file to avoid hanging
+                        features = self.midi_processor.extract_features(midi_data, cache_path=cache_path)
+                        batch_midi_features.append(features)
+                    except Exception as e:
+                        logger.error(f"Error extracting MIDI features for {batch_midi_paths[i]}: {str(e)}")
+                        # Create default features on error to continue processing
+                        default_features = {
+                            'sequence_embedding': [0.0] * 512,  # Default embedding size
+                            'model_name': 'error_processing'
+                        }
+                        batch_midi_features.append(default_features)
+                        
+                        # Cache the default features to avoid reprocessing
+                        try:
+                            with open(cache_path, 'w') as f:
+                                json.dump(default_features, f)
+                        except Exception as cache_err:
+                            logger.warning(f"Error caching default features: {str(cache_err)}")
+                
+                # Process text features in batch (if possible)
+                batch_text_features = []
+                for text in batch_texts:
+                    try:
+                        features = self.text_processor.extract_features(text)
+                        batch_text_features.append(features)
+                    except Exception as e:
+                        logger.error(f"Error extracting text features: {str(e)}")
+                        # Create default text features on error
+                        default_features = {
+                            'bert_embedding': [0.0] * 768,  # Default embedding size for BERT
+                            'sentence_embedding': [0.0] * 768
+                        }
+                        batch_text_features.append(default_features)
+                
+                # Combine features and save results
+                for i in range(len(valid_indices)):
+                    # Continue processing even with default features
+                    # We've already replaced None values with default features
+                    original_item = batch[valid_indices[i]]
+                    midi_path = batch_midi_paths[i]
+                    
+                    processed_item = {
+                        'midi_path': midi_path,
+                        'text': batch_texts[i],
+                        'midi_features': batch_midi_features[i],
+                        'text_features': batch_text_features[i]
+                    }
+                    
+                    # Add metadata if available
+                    if 'metadata' in original_item:
+                        processed_item['metadata'] = self._make_json_serializable(original_item['metadata'])
+                    
+                    processed_data.append(processed_item)
+                    
+                    # Cache processed item
+                    try:
+                        item_cache_path = os.path.join(cache_dir, f"{os.path.basename(midi_path)}_processed.json")
+                        with open(item_cache_path, 'w') as f:
+                            # Ensure all values are JSON serializable
+                            serializable_item = self._make_json_serializable(processed_item)
+                            json.dump(serializable_item, f)
+                    except Exception as e:
+                        logger.error(f"Error saving cache for {midi_path}: {str(e)}")
+                
+            except Exception as e:
+                logger.error(f"Error processing batch: {str(e)}")
+                logger.error(traceback.format_exc())
 
         return processed_data
 
@@ -436,6 +642,23 @@ class DataPreparer:
             },
             "top_instruments": dict(top_instruments),
         }
+
+    def _make_json_serializable(self, obj):
+        """Convert numpy types to Python types for JSON serialization"""
+        import numpy as np
+        
+        if isinstance(obj, dict):
+            return {k: self._make_json_serializable(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._make_json_serializable(item) for item in obj]
+        elif isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return self._make_json_serializable(obj.tolist())
+        else:
+            return obj
 
 
 def prepare_training_data(

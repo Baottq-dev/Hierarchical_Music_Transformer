@@ -4,15 +4,18 @@ MIDI Processor - Processes MIDI files for training
 
 import concurrent.futures
 import hashlib
+import inspect
 import json
+import numpy as np
 import os
 import tempfile
 import time
+import traceback
 import warnings
 from typing import Any, Dict, List, Optional, Tuple
 
 import mido
-import numpy as np
+import torch
 import pretty_midi
 from tqdm import tqdm
 
@@ -23,58 +26,181 @@ from amt.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-class MIDIProcessor:
+class MidiProcessor:
     """Processes MIDI files for training and generation."""
 
     def __init__(
         self,
         max_sequence_length: int = 1024,
-        time_resolution: float = 0.125,
-        velocity_bins: int = 32,
-        pitch_range: Tuple[int, int] = (21, 108),
-        use_cache: bool = True,
-        cache_dir: str = "data/processed/cache",
         use_pretrained_model: bool = False,
         pretrained_model_path: Optional[str] = None,
-        use_hierarchical_encoding: bool = False
+        use_hierarchical_encoding: bool = False,
+        device: str = "cpu",
+        use_mixed_precision: bool = False
     ):
+        """Initialize MidiProcessor
+        
+        Args:
+            max_sequence_length: Maximum sequence length
+            use_pretrained_model: Whether to use pretrained model
+            pretrained_model_path: Path to pretrained model
+            use_hierarchical_encoding: Whether to use hierarchical encoding
+            device: Device to use (cpu, cuda)
+            use_mixed_precision: Whether to use mixed precision (FP16) for faster processing
+        """
         self.max_sequence_length = max_sequence_length
-        self.time_resolution = time_resolution
-        self.velocity_bins = velocity_bins
-        self.pitch_range = pitch_range
-        self.min_pitch, self.max_pitch = pitch_range
-        self.use_cache = use_cache
-        self.cache_dir = cache_dir
         self.use_pretrained_model = use_pretrained_model
         self.pretrained_model_path = pretrained_model_path
         self.use_hierarchical_encoding = use_hierarchical_encoding
-        self.pretrained_model = None
-
-        # Create cache directory if needed
-        if use_cache and not os.path.exists(cache_dir):
-            os.makedirs(cache_dir, exist_ok=True)
-
-        # Event vocabulary
-        self.event_types = ["note_on", "note_off", "time_shift", "velocity"]
-        self.vocab_size = (
-            len(self.event_types) + self.max_pitch - self.min_pitch + 1 + velocity_bins + 1
-        )
+        self.device = device
+        self.use_mixed_precision = use_mixed_precision and device == "cuda"
+        
+        # Initialize vocabulary
+        self.vocab_size = 128 + 128 + 100  # 128 note-on, 128 note-off, 100 time-shift
         
         # Load pretrained model if specified
+        self.pretrained_model = None
+        self.feature_extractor = None
         if use_pretrained_model and pretrained_model_path:
-            self._load_pretrained_model()
+            self.load_pretrained_model()
+
+    def load_pretrained_model(self):
+        """Load pretrained model"""
+        if not self.use_pretrained_model or not self.pretrained_model_path:
+            logger.warning("No pretrained model specified. Skipping.")
+            return
+        
+        try:
+            logger.info(f"Loading pretrained music model from {self.pretrained_model_path}")
+            
+            # Try to load as a Hugging Face model
+            try:
+                from transformers import AutoModel, AutoConfig, AutoProcessor, AutoFeatureExtractor
+                import torch
+                
+                # Try to load as a Hugging Face model
+                logger.info(f"Attempting to load as a Hugging Face model: {self.pretrained_model_path}")
+                
+                # List of valid music models to try
+                valid_models = [
+                    self.pretrained_model_path,  # Try the specified path first
+                    'm-a-p/MERT-v1-95M',         # MERT model (95M parameters)
+                    'm-a-p/MERT-v1-330M',        # MERT model (330M parameters)
+                    'wazenmai/MIDI-BERT'         # MIDI-BERT model
+                ]
+                
+                # Try each model in order
+                for model_path in valid_models:
+                    logger.info(f"Trying to load model: {model_path}")
+                    try:
+                        # Try to load the model with trust_remote_code=True for custom models
+                        self.pretrained_model = AutoModel.from_pretrained(
+                            model_path, 
+                            trust_remote_code=True
+                        )
+                        
+                        # Move model to device
+                        self.pretrained_model = self.pretrained_model.to(self.device)
+                        
+                        # Enable mixed precision if requested and on CUDA
+                        if self.use_mixed_precision and self.device == "cuda":
+                            logger.info("Enabling mixed precision (FP16) for faster processing")
+                            # Set model to use half precision
+                            self.pretrained_model = self.pretrained_model.half()
+                        
+                        # Try to load the feature extractor or processor
+                        try:
+                            self.feature_extractor = AutoFeatureExtractor.from_pretrained(
+                                model_path,
+                                trust_remote_code=True
+                            )
+                            logger.info(f"Successfully loaded feature extractor for {model_path}")
+                        except Exception as e:
+                            logger.warning(f"Could not load feature extractor: {str(e)}")
+                            try:
+                                self.feature_extractor = AutoProcessor.from_pretrained(
+                                    model_path,
+                                    trust_remote_code=True
+                                )
+                                logger.info(f"Successfully loaded processor for {model_path}")
+                            except Exception as e:
+                                logger.warning(f"Could not load processor: {str(e)}")
+                        
+                        logger.info(f"Successfully loaded model {model_path} on {self.device}")
+                        self.pretrained_model_path = model_path
+                        break
+                    except Exception as e:
+                        logger.warning(f"Failed to load model {model_path}: {str(e)}")
+                        continue
+                
+                if self.pretrained_model is None:
+                    logger.error("Failed to load any model. Using default features.")
+            
+            except ImportError as e:
+                logger.error(f"Could not import transformers: {str(e)}")
+                logger.error("Please install transformers: pip install transformers")
+        
+        except Exception as e:
+            logger.error(f"Error loading pretrained model: {str(e)}")
+            logger.error(traceback.format_exc())
 
     def _load_pretrained_model(self):
         """Load pretrained music model for feature extraction"""
         try:
             logger.info(f"Loading pretrained music model from {self.pretrained_model_path}")
-            if os.path.exists(self.pretrained_model_path):
-                self.pretrained_model = torch.load(self.pretrained_model_path, map_location='cpu')
-                logger.info("Successfully loaded pretrained music model")
+            
+            # Check if it's a Hugging Face model path
+            if '/' in self.pretrained_model_path:
+                try:
+                    from transformers import AutoModel, AutoConfig, AutoProcessor
+                    
+                    # Try to load as a Hugging Face model
+                    logger.info(f"Attempting to load as a Hugging Face model: {self.pretrained_model_path}")
+                    
+                    # List of valid music models to try
+                    valid_models = [
+                        self.pretrained_model_path,  # Try the specified path first
+                        'm-a-p/MERT-v1-95M',         # MERT model (95M parameters)
+                        'm-a-p/MERT-v1-330M',        # MERT model (330M parameters)
+                        'wazenmai/MIDI-BERT'         # MIDI-BERT model
+                    ]
+                    
+                    # Try each model until one works
+                    for model_path in valid_models:
+                        try:
+                            logger.info(f"Trying to load model: {model_path}")
+                            config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+                            self.feature_extractor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True) if hasattr(AutoProcessor, 'from_pretrained') else None
+                            self.pretrained_model = AutoModel.from_pretrained(model_path, trust_remote_code=True)
+                            logger.info(f"Successfully loaded model {model_path}")
+                            return
+                        except Exception as e:
+                            logger.warning(f"Failed to load model {model_path}: {str(e)}")
+                    
+                    # If we get here, none of the models worked
+                    raise ValueError("Could not load any of the specified music models")
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to load as Hugging Face model: {str(e)}")
+                    logger.warning("Falling back to torch.load")
+                    
+                    # Try to load as a local path
+                    if os.path.exists(self.pretrained_model_path):
+                        self.pretrained_model = torch.load(self.pretrained_model_path)
+                        return
+                    else:
+                        raise FileNotFoundError(f"Pretrained model path does not exist: {self.pretrained_model_path}")
+            
+            # If not a Hugging Face model, try to load as a local path
+            elif os.path.exists(self.pretrained_model_path):
+                self.pretrained_model = torch.load(self.pretrained_model_path)
+                return
             else:
-                logger.warning(f"Pretrained model path does not exist: {self.pretrained_model_path}")
+                raise FileNotFoundError(f"Pretrained model path does not exist: {self.pretrained_model_path}")
+                
         except Exception as e:
-            logger.error(f"Error loading pretrained model: {e}")
+            logger.error(f"Error loading pretrained model: {str(e)}")
+            logger.error(traceback.format_exc())
             self.pretrained_model = None
 
     def _get_cache_path(self, midi_file: str) -> str:
@@ -139,50 +265,159 @@ class MIDIProcessor:
         # All methods failed
         return None
 
-    def extract_features_with_pretrained(self, midi_tokens, hierarchical_info=None):
-        """Extract features using pretrained model"""
+    def extract_features(self, midi_data, cache_path=None):
+        """Extract features using pretrained model
+        
+        Args:
+            midi_data: MIDI data
+            cache_path: Path to cache extracted features
+            
+        Returns:
+            Dictionary of extracted features
+        """
         if self.pretrained_model is None:
-            return self.extract_features_default(midi_tokens)
+            logger.warning("No pretrained model loaded. Returning empty features.")
+            return {}
+        
+        # Check if cached features exist
+        if cache_path and os.path.exists(cache_path):
+            try:
+                with open(cache_path, 'r') as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.warning(f"Error loading cached features: {str(e)}")
         
         try:
-            # Chuyển đổi tokens thành tensor
-            tokens_tensor = torch.tensor(midi_tokens, dtype=torch.long).unsqueeze(0)  # Add batch dimension
+            # Convert MIDI to audio using pretty_midi
+            if hasattr(midi_data, 'synthesize'):
+                try:
+                    # Limit MIDI duration to avoid memory issues
+                    max_duration = 30.0  # seconds
+                    if hasattr(midi_data, 'get_end_time'):
+                        original_duration = midi_data.get_end_time()
+                        if original_duration > max_duration:
+                            logger.warning(f"Limiting MIDI duration from {original_duration:.2f}s to {max_duration}s")
+                            # Truncate note events
+                            for instrument in midi_data.instruments:
+                                instrument.notes = [note for note in instrument.notes if note.start < max_duration]
+                    
+                    # Use 24000Hz sampling rate as required by the MERT model
+                    audio = midi_data.synthesize(fs=24000)
+                    
+                    # Limit audio length to prevent memory issues (max 30 seconds)
+                    max_samples = 30 * 24000
+                    if len(audio) > max_samples:
+                        logger.warning(f"Truncating audio from {len(audio)} to {max_samples} samples")
+                        audio = audio[:max_samples]
+                    
+                    # Reshape audio to match expected input format - MERT expects [batch_size, sequence_length]
+                    # Not [batch_size, channels, channels, sequence_length]
+                    audio_tensor = torch.tensor(audio, dtype=torch.float32).unsqueeze(0)  # [1, samples]
+                    
+                    # Move to device
+                    audio_tensor = audio_tensor.to(self.device)
+                    
+                    # Process with feature extractor if available
+                    if self.feature_extractor:
+                        inputs = self.feature_extractor(
+                            audio_tensor, 
+                            sampling_rate=24000, 
+                            return_tensors="pt"
+                        )
+                        
+                        # Move inputs to device
+                        for key, val in inputs.items():
+                            if isinstance(val, torch.Tensor):
+                                inputs[key] = val.to(self.device)
+                        
+                        # Fix input shape if needed - critical fix for MERT model
+                        if 'input_values' in inputs:
+                            # Check tensor shape and fix if necessary
+                            input_shape = inputs['input_values'].shape
+                            if len(input_shape) == 4:  # [1, 1, 1, sequence_length]
+                                # Reshape to expected format [batch_size, sequence_length]
+                                inputs['input_values'] = inputs['input_values'].squeeze(1).squeeze(1)
+                            elif len(input_shape) == 3 and input_shape[1] == 1:  # [1, 1, sequence_length]
+                                # Reshape to [batch_size, sequence_length]
+                                inputs['input_values'] = inputs['input_values'].squeeze(1)
+                        
+                        # Use mixed precision if enabled
+                        if self.use_mixed_precision:
+                            with torch.amp.autocast(device_type='cuda'):  # Updated syntax
+                                with torch.no_grad():
+                                    outputs = self.pretrained_model(**inputs)
+                        else:
+                            with torch.no_grad():
+                                outputs = self.pretrained_model(**inputs)
+                            
+                        # Extract embeddings (last hidden state)
+                        if hasattr(outputs, 'last_hidden_state'):
+                            embeddings = outputs.last_hidden_state
+                        else:
+                            embeddings = outputs[0]  # Fallback
+                        
+                        # Average pooling over time dimension
+                        pooled_embedding = torch.mean(embeddings, dim=1)
+                        
+                        features = {
+                            'sequence_embedding': pooled_embedding.squeeze().cpu().numpy().tolist(),
+                            'model_name': self.pretrained_model_path
+                        }
+                    else:
+                        # Fallback if no feature extractor
+                        features = {
+                            'sequence_embedding': [0.0] * 512,  # Default embedding size
+                            'model_name': 'none'
+                        }
+                except Exception as e:
+                    logger.error(f"Error processing audio: {str(e)}")
+                    logger.error(traceback.format_exc())
+                    # Return default features on error
+                    features = {
+                        'sequence_embedding': [0.0] * 512,
+                        'model_name': 'error_processing'
+                    }
+            else:
+                logger.warning("MIDI data does not have synthesize method")
+                features = {
+                    'sequence_embedding': [0.0] * 512,  # Default embedding size
+                    'model_name': 'none'
+                }
+                
+            # Cache features
+            if cache_path:
+                try:
+                    with open(cache_path, 'w') as f:
+                        json.dump(features, f)
+                except Exception as e:
+                    logger.warning(f"Error caching features: {str(e)}")
+                    
+            return features
             
-            # Extract features
-            with torch.no_grad():
-                if hasattr(self.pretrained_model, 'extract_features'):
-                    features = self.pretrained_model.extract_features(
-                        tokens_tensor, 
-                        hierarchical_data=hierarchical_info
-                    )
-                    return features.squeeze(0).numpy()  # Remove batch dimension
-                else:
-                    # Fallback if extract_features is not available
-                    return self.extract_features_default(midi_tokens)
         except Exception as e:
-            logger.error(f"Error extracting features with pretrained model: {e}")
-            return self.extract_features_default(midi_tokens)
-
-    def extract_features_default(self, midi_tokens):
-        """Default feature extraction when no pretrained model is available"""
-        # Simple embedding based on token IDs
-        embedding_dim = 512
-        vocab_size = self.get_vocab_size()
+            logger.error(f"Error extracting features: {str(e)}")
+            logger.error(traceback.format_exc())
+            return {
+                'sequence_embedding': [0.0] * 512,  # Default embedding size
+                'model_name': 'error'
+            }
+    
+    def _make_json_serializable(self, obj):
+        """Convert numpy types to Python types for JSON serialization"""
+        import numpy as np
         
-        # Create a simple embedding matrix
-        np.random.seed(42)  # For reproducibility
-        embedding_matrix = np.random.randn(vocab_size, embedding_dim) * 0.02
-        
-        # Create embeddings for each token
-        embeddings = np.array([embedding_matrix[token % vocab_size] for token in midi_tokens])
-        
-        # Get a sequence-level representation by averaging
-        sequence_embedding = np.mean(embeddings, axis=0)
-        
-        return {
-            "token_embeddings": embeddings,
-            "sequence_embedding": sequence_embedding
-        }
+        if isinstance(obj, dict):
+            return {k: self._make_json_serializable(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._make_json_serializable(item) for item in obj]
+        elif isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return self._make_json_serializable(obj.tolist())
+        else:
+            return obj
     
     def get_vocab_size(self):
         """Get the vocabulary size"""
@@ -429,8 +664,42 @@ class MIDIProcessor:
 
     def process_midi_file(self, midi_file: str) -> Optional[Dict[str, Any]]:
         """Process a single MIDI file."""
+        # Handle Kaggle environment path adjustment
+        original_midi_file = midi_file
+        if midi_file.startswith("data/midi/"):
+            # Check if we're running in Kaggle environment
+            if os.path.exists("/kaggle/input"):
+                # Try different Kaggle dataset paths
+                possible_paths = [
+                    "/kaggle/input/midi-dataset/midi",
+                    "/kaggle/input/your-dataset/midi",
+                    "/kaggle/input/lakh-midi-dataset/midi",
+                    "/kaggle/input/midi-files/midi",
+                    "/kaggle/working/data/midi"
+                ]
+                
+                relative_path = midi_file[len("data/midi/"):]
+                for kaggle_path in possible_paths:
+                    potential_path = os.path.join(kaggle_path, relative_path)
+                    if os.path.exists(potential_path):
+                        midi_file = potential_path
+                        logger.info(f"Using Kaggle path: {midi_file}")
+                        break
+                
+                # If we didn't find the file but we're in Kaggle, try harder with a general search
+                if midi_file == original_midi_file:
+                    for root_path in ["/kaggle/input", "/kaggle/working"]:
+                        if os.path.exists(root_path):
+                            for root, dirs, files in os.walk(root_path):
+                                file_name = os.path.basename(original_midi_file)
+                                for file in files:
+                                    if file == file_name:
+                                        midi_file = os.path.join(root, file)
+                                        logger.info(f"Found file via search: {midi_file}")
+                                        break
+
         # Check cache first if enabled
-        cache_path = self._get_cache_path(midi_file)
+        cache_path = self._get_cache_path(original_midi_file)  # Use original path for cache key
         if self.use_cache and cache_path and os.path.exists(cache_path):
             try:
                 with open(cache_path) as f:
@@ -441,6 +710,7 @@ class MIDIProcessor:
         # Process the file if not in cache
         midi_data = self.load_midi(midi_file)
         if midi_data is None:
+            logger.warning(f"Failed to load MIDI file: {midi_file}")
             return None
 
         # Extract events
@@ -478,8 +748,9 @@ class MIDIProcessor:
             "tokens": tokens,
             "sequence_length": len(tokens),
             "metadata": {
-                "file_path": midi_file,
-                "file_name": os.path.basename(midi_file),
+                "file_path": original_midi_file,  # Store original path for consistency
+                "kaggle_path": midi_file if midi_file != original_midi_file else None,  # Store Kaggle path if different
+                "file_name": os.path.basename(original_midi_file),
                 "duration": end_time, 
                 "tempo": tempo, 
                 "instruments": instruments
@@ -497,7 +768,7 @@ class MIDIProcessor:
         # After processing tokens, extract features if pretrained model is available
         if self.use_pretrained_model and self.pretrained_model is not None:
             hierarchical_info = self.extract_hierarchical_info(midi_data) if self.use_hierarchical_encoding else None
-            features = self.extract_features_with_pretrained(tokens, hierarchical_info)
+            features = self.extract_features(midi_data) # Pass midi_data directly
             result["features"] = features
             if hierarchical_info:
                 result["hierarchical_info"] = hierarchical_info
@@ -641,25 +912,50 @@ class MIDIProcessor:
         return processed_data
 
     def save_processed_data(self, processed_data: List[Dict[str, Any]], output_file: str):
-        """Save processed data to a file."""
+        """Save processed data to file."""
         os.makedirs(os.path.dirname(output_file), exist_ok=True)
         
-        # Convert numpy types to native Python types for JSON serialization
         def convert_numpy_types(obj):
-            if isinstance(obj, dict):
-                return {k: convert_numpy_types(v) for k, v in obj.items()}
-            elif isinstance(obj, list):
-                return [convert_numpy_types(item) for item in obj]
-            elif isinstance(obj, np.integer):
+            """Convert numpy types for JSON serialization."""
+            if isinstance(obj, np.integer):
                 return int(obj)
             elif isinstance(obj, np.floating):
                 return float(obj)
             elif isinstance(obj, np.ndarray):
                 return obj.tolist()
-            else:
-                return obj
+            elif isinstance(obj, np.bool_):
+                return bool(obj)
+            elif isinstance(obj, set):
+                return list(obj)
+            elif isinstance(obj, dict):
+                return {k: convert_numpy_types(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_numpy_types(i) for i in obj]
+            elif isinstance(obj, tuple):
+                return [convert_numpy_types(i) for i in obj]
+            return obj
         
+        # Convert numpy types before saving
         serializable_data = convert_numpy_types(processed_data)
         
-        with open(output_file, "w") as f:
-            json.dump(serializable_data, f, indent=2)
+        try:
+            with open(output_file, "w", encoding="utf-8") as f:
+                json.dump(serializable_data, f, indent=2, ensure_ascii=False)
+            logger.info(f"Processed data saved to {output_file}")
+        except Exception as e:
+            logger.error(f"Error saving processed data: {e}")
+            # Try to save with more aggressive error handling
+            try:
+                # Remove potentially problematic fields
+                for item in serializable_data:
+                    if "features" in item:
+                        del item["features"]
+                    if "hierarchical_info" in item:
+                        del item["hierarchical_info"]
+                
+                with open(output_file, "w", encoding="utf-8") as f:
+                    json.dump(serializable_data, f, indent=2, ensure_ascii=False)
+                logger.warning(f"Saved processed data with reduced features to {output_file}")
+            except Exception as e2:
+                logger.error(f"Failed to save even with reduced features: {e2}")
+                raise

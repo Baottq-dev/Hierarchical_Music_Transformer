@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 import pretty_midi
 import torch
 
-from amt.process.midi_processor import MIDIProcessor
+from amt.process.midi_processor import MidiProcessor
 from amt.process.text_processor import TextProcessor
 from amt.train.model import MusicTransformer
 
@@ -28,7 +28,7 @@ class MusicGenerator:
         self.temperature = temperature
 
         # Initialize processors
-        self.midi_processor = MIDIProcessor()
+        self.midi_processor = MidiProcessor()
         self.text_processor = TextProcessor()
 
         # Load model if provided

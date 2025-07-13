@@ -37,11 +37,11 @@ ENV/
 .ipynb_checkpoints
 
 # Project specific
+data/midi/
 models/checkpoints/*
 !models/checkpoints/.gitkeep
 data/processed/*
 !data/processed/.gitkeep
-data/output/*
 !data/output/.gitkeep
 
 # Mypy

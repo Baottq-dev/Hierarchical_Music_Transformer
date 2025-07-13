@@ -13,7 +13,7 @@ from tqdm import tqdm
 import time
 import logging
 
-from amt.process.midi_processor import MIDIProcessor
+from amt.process.midi_processor import MidiProcessor
 from amt.process.text_processor import TextProcessor
 from amt.process.data_preparer import DataPreparer
 from amt.utils.logging import get_logger
@@ -64,7 +64,7 @@ class AdvancedDataCreator:
             self.device = torch.device(device)
             
         # Initialize processors
-        self.midi_processor = MIDIProcessor(
+        self.midi_processor = MidiProcessor(
             max_sequence_length=max_sequence_length,
             use_cache=True
         )

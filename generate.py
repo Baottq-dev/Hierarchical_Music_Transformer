@@ -15,7 +15,7 @@ from typing import Dict, Any, List, Optional
 
 from amt.generate.generator import Generator
 from amt.train.model import create_model
-from amt.process.midi_processor import MIDIProcessor
+from amt.process.midi_processor import MidiProcessor
 from amt.process.text_processor import TextProcessor
 from amt.utils.logging import get_logger
 from amt.config import get_settings
@@ -187,7 +187,7 @@ def main():
     model.eval()
     
     # Create processors
-    midi_processor = MIDIProcessor(
+    midi_processor = MidiProcessor(
         max_sequence_length=args.max_length,
         use_hierarchical_encoding=True
     )

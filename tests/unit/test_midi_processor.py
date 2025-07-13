@@ -8,15 +8,15 @@ import numpy as np
 import pretty_midi
 from typing import List, Dict, Any
 
-from amt.process.midi_processor import MIDIProcessor
+from amt.process.midi_processor import MidiProcessor
 
 
-class TestMIDIProcessor:
-    """Test suite for the MIDIProcessor class."""
+class TestMidiProcessor:
+    """Test suite for the MidiProcessor class."""
     
     def test_init(self):
         """Test initialization of the MIDIProcessor."""
-        processor = MIDIProcessor(
+        processor = MidiProcessor(
             max_sequence_length=512,
             time_resolution=0.25,
             velocity_bins=16,
@@ -34,7 +34,7 @@ class TestMIDIProcessor:
     
     def test_load_midi(self, simple_midi_file):
         """Test loading a MIDI file."""
-        processor = MIDIProcessor(use_cache=False)
+        processor = MidiProcessor(use_cache=False)
         midi_data = processor.load_midi(simple_midi_file)
         
         assert midi_data is not None
@@ -44,7 +44,7 @@ class TestMIDIProcessor:
     
     def test_extract_events(self, simple_midi_file):
         """Test extracting events from a MIDI file."""
-        processor = MIDIProcessor(use_cache=False)
+        processor = MidiProcessor(use_cache=False)
         midi_data = processor.load_midi(simple_midi_file)
         events = processor.extract_events(midi_data)
         
@@ -68,7 +68,7 @@ class TestMIDIProcessor:
     
     def test_events_to_tokens(self, simple_midi_file):
         """Test converting events to tokens."""
-        processor = MIDIProcessor(use_cache=False)
+        processor = MidiProcessor(use_cache=False)
         midi_data = processor.load_midi(simple_midi_file)
         events = processor.extract_events(midi_data)
         tokens = processor.events_to_tokens(events)
@@ -80,7 +80,7 @@ class TestMIDIProcessor:
     
     def test_tokens_to_events(self, simple_midi_file):
         """Test converting tokens back to events."""
-        processor = MIDIProcessor(use_cache=False)
+        processor = MidiProcessor(use_cache=False)
         midi_data = processor.load_midi(simple_midi_file)
         original_events = processor.extract_events(midi_data)
         tokens = processor.events_to_tokens(original_events)
@@ -98,7 +98,7 @@ class TestMIDIProcessor:
     
     def test_events_to_midi(self, simple_midi_file):
         """Test converting events back to MIDI."""
-        processor = MIDIProcessor(use_cache=False)
+        processor = MidiProcessor(use_cache=False)
         original_midi = processor.load_midi(simple_midi_file)
         events = processor.extract_events(original_midi)
         
@@ -117,7 +117,7 @@ class TestMIDIProcessor:
     
     def test_process_midi_file(self, simple_midi_file):
         """Test processing a complete MIDI file."""
-        processor = MIDIProcessor(use_cache=False)
+        processor = MidiProcessor(use_cache=False)
         result = processor.process_midi_file(simple_midi_file)
         
         # Check the result structure
@@ -136,7 +136,7 @@ class TestMIDIProcessor:
     
     def test_roundtrip_conversion(self, simple_midi_file, temp_dir):
         """Test a complete roundtrip conversion: MIDI -> tokens -> MIDI."""
-        processor = MIDIProcessor(use_cache=False)
+        processor = MidiProcessor(use_cache=False)
         
         # Process the original MIDI file
         result = processor.process_midi_file(simple_midi_file)
