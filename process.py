@@ -11,6 +11,10 @@ import logging
 import sys
 import time
 import numpy as np
+import gzip
+import pickle
+import bz2
+import lzma
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
@@ -196,6 +200,12 @@ def main(args):
             
             # Process chunk
             chunk_processed = data_preparer.process_paired_data(chunk_data, batch_size=args.batch_size)
+            
+            # Filter unnecessary data if requested
+            if args.optimize_storage:
+                logger.info("Optimizing storage by removing unnecessary data")
+                chunk_processed = optimize_data_for_storage(chunk_processed, args.keep_essential_only)
+            
             processed_data.extend(chunk_processed)
             
             # Force garbage collection to free memory
@@ -213,23 +223,109 @@ def main(args):
             
             # Save intermediate results
             if args.save_intermediate_chunks:
-                chunk_output_file = os.path.join(args.output_dir, f"{args.dataset_name}_chunk_{chunk_start+1}_{chunk_end}.json")
-                with open(chunk_output_file, 'w') as f:
-                    json.dump(convert_numpy_types(chunk_processed), f)
+                chunk_output_file = os.path.join(args.output_dir, f"{args.dataset_name}_chunk_{chunk_start+1}_{chunk_end}")
+                
+                # Convert numpy types
+                serializable_data = convert_numpy_types(chunk_processed)
+                
+                # Save with compression if requested
+                if args.compress_output:
+                    if args.compression_format == "gzip":
+                        chunk_output_file += ".json.gz"
+                        with gzip.open(chunk_output_file, 'wt', encoding='utf-8') as f:
+                            json.dump(serializable_data, f)
+                    elif args.compression_format == "bz2":
+                        chunk_output_file += ".json.bz2"
+                        with bz2.open(chunk_output_file, 'wt', encoding='utf-8') as f:
+                            json.dump(serializable_data, f)
+                    elif args.compression_format == "xz":
+                        chunk_output_file += ".json.xz"
+                        with lzma.open(chunk_output_file, 'wt', encoding='utf-8') as f:
+                            json.dump(serializable_data, f)
+                    elif args.compression_format == "pickle":
+                        chunk_output_file += ".pkl"
+                        with open(chunk_output_file, 'wb') as f:
+                            pickle.dump(chunk_processed, f, protocol=4)
+                    elif args.compression_format == "pickle.gz":
+                        chunk_output_file += ".pkl.gz"
+                        with gzip.open(chunk_output_file, 'wb') as f:
+                            pickle.dump(chunk_processed, f, protocol=4)
+                else:
+                    chunk_output_file += ".json"
+                    with open(chunk_output_file, 'w') as f:
+                        json.dump(serializable_data, f)
+                
                 logger.info(f"Saved intermediate chunk to {chunk_output_file}")
     else:
         # Process all data at once
         processed_data = data_preparer.process_paired_data(paired_data, batch_size=args.batch_size)
+        
+        # Filter unnecessary data if requested
+        if args.optimize_storage:
+            logger.info("Optimizing storage by removing unnecessary data")
+            processed_data = optimize_data_for_storage(processed_data, args.keep_essential_only)
     
     # Save processed data
-    output_file = os.path.join(args.output_dir, f"{args.dataset_name}.json")
-    with open(output_file, 'w') as f:
-        # Sử dụng hàm convert_numpy_types để chuyển đổi numpy types trước khi lưu
-        json.dump(convert_numpy_types(processed_data), f)
+    output_file = os.path.join(args.output_dir, f"{args.dataset_name}")
+    
+    # Convert numpy types
+    serializable_data = convert_numpy_types(processed_data)
+    
+    # Save with compression if requested
+    if args.compress_output:
+        if args.compression_format == "gzip":
+            output_file += ".json.gz"
+            with gzip.open(output_file, 'wt', encoding='utf-8') as f:
+                json.dump(serializable_data, f)
+        elif args.compression_format == "bz2":
+            output_file += ".json.bz2"
+            with bz2.open(output_file, 'wt', encoding='utf-8') as f:
+                json.dump(serializable_data, f)
+        elif args.compression_format == "xz":
+            output_file += ".json.xz"
+            with lzma.open(output_file, 'wt', encoding='utf-8') as f:
+                json.dump(serializable_data, f)
+        elif args.compression_format == "pickle":
+            output_file += ".pkl"
+            with open(output_file, 'wb') as f:
+                pickle.dump(processed_data, f, protocol=4)
+        elif args.compression_format == "pickle.gz":
+            output_file += ".pkl.gz"
+            with gzip.open(output_file, 'wb') as f:
+                pickle.dump(processed_data, f, protocol=4)
+    else:
+        output_file += ".json"
+        with open(output_file, 'w') as f:
+            json.dump(serializable_data, f)
     
     logger.info(f"Processed {len(processed_data)} items")
     logger.info(f"Saved processed data to {output_file}")
     logger.info(f"Processing completed in {time.time() - start_time:.2f} seconds")
+
+def optimize_data_for_storage(data, keep_essential_only=False):
+    """Optimize data for storage by removing unnecessary fields and reducing precision"""
+    if isinstance(data, list):
+        return [optimize_data_for_storage(item, keep_essential_only) for item in data]
+    elif isinstance(data, dict):
+        result = {}
+        for key, value in data.items():
+            # Skip large intermediate data
+            if key in ['token_embeddings', 'input_ids'] and keep_essential_only:
+                continue
+                
+            # Reduce precision of embeddings to float16 (half precision)
+            if key in ['sequence_embedding', 'sentence_embedding', 'bert_embedding'] and isinstance(value, (list, np.ndarray)):
+                if isinstance(value, np.ndarray):
+                    # Convert to float16 and back to list
+                    result[key] = np.array(value, dtype=np.float16).tolist()
+                else:
+                    # Convert list to numpy array, then to float16, then back to list
+                    result[key] = np.array(value, dtype=np.float16).tolist()
+            else:
+                result[key] = optimize_data_for_storage(value, keep_essential_only)
+        return result
+    else:
+        return data
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process paired MIDI and text data")
@@ -290,6 +386,17 @@ if __name__ == "__main__":
                       help="Limit memory usage for environments with restricted RAM (like Kaggle)")
     parser.add_argument("--memory-efficient-batch-size", action="store_true",
                       help="Don't automatically reduce batch size even when limiting memory")
+    
+    # Storage optimization arguments
+    parser.add_argument("--optimize-storage", action="store_true",
+                      help="Optimize storage by removing unnecessary data and reducing precision")
+    parser.add_argument("--keep-essential-only", action="store_true",
+                      help="Keep only essential data (embeddings and metadata)")
+    parser.add_argument("--compress-output", action="store_true",
+                      help="Compress output files to save disk space")
+    parser.add_argument("--compression-format", type=str, default="gzip",
+                      choices=["gzip", "bz2", "xz", "pickle", "pickle.gz"],
+                      help="Compression format to use")
     
     args = parser.parse_args()
     main(args) 
