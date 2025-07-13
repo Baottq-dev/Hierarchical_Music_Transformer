@@ -96,7 +96,7 @@ class MusicTextDataset(Dataset):
 
 
 class DataPreparer:
-    """Prepares data for training."""
+    """Prepares data for training and evaluation."""
 
     def __init__(
         self,
@@ -104,22 +104,25 @@ class DataPreparer:
         text_processor: 'TextProcessor',
         feature_fusion_method: str = "attention",
         output_dir: str = "data/processed",
-        is_kaggle: bool = False
+        is_kaggle: bool = False,
+        disable_cache: bool = False
     ):
-        """Initialize DataPreparer
+        """Initialize DataPreparer.
         
         Args:
             midi_processor: MIDI processor
             text_processor: Text processor
-            feature_fusion_method: Method to combine features
+            feature_fusion_method: Method to fuse features
             output_dir: Output directory
             is_kaggle: Whether running in Kaggle environment
+            disable_cache: Whether to disable caching of processed files
         """
         self.midi_processor = midi_processor
         self.text_processor = text_processor
         self.feature_fusion_method = feature_fusion_method
         self.output_dir = output_dir
         self.is_kaggle = is_kaggle
+        self.disable_cache = disable_cache
         
         # Create output directory
         os.makedirs(output_dir, exist_ok=True)
@@ -328,9 +331,11 @@ class DataPreparer:
         else:
             pairs_to_process = paired_data
         
-        # Create cache directory
-        cache_dir = os.path.join(self.output_dir, "midi_cache")
-        os.makedirs(cache_dir, exist_ok=True)
+        # Create cache directory if caching is enabled
+        cache_dir = None
+        if not self.disable_cache:
+            cache_dir = os.path.join(self.output_dir, "midi_cache")
+            os.makedirs(cache_dir, exist_ok=True)
         
         # Process data in batches
         total_items = len(pairs_to_process)
@@ -397,16 +402,17 @@ class DataPreparer:
                         logger.warning(f"MIDI file not found: {midi_path}")
                         continue
                     
-                    # Check cache first
-                    cache_path = os.path.join(cache_dir, f"{os.path.basename(midi_path)}_processed.json")
-                    if os.path.exists(cache_path):
-                        try:
-                            with open(cache_path, 'r') as f:
-                                cached_item = json.load(f)
-                                processed_data.append(cached_item)
-                                continue
-                        except Exception as e:
-                            logger.warning(f"Cache read error for {midi_path}: {str(e)}")
+                    # Check cache first if caching is enabled
+                    if not self.disable_cache and cache_dir:
+                        cache_path = os.path.join(cache_dir, f"{os.path.basename(midi_path)}_processed.json")
+                        if os.path.exists(cache_path):
+                            try:
+                                with open(cache_path, 'r') as f:
+                                    cached_item = json.load(f)
+                                    processed_data.append(cached_item)
+                                    continue
+                            except Exception as e:
+                                logger.warning(f"Cache read error for {midi_path}: {str(e)}")
                     
                     # Add to batch for processing
                     batch_midi_paths.append(midi_path)
@@ -438,7 +444,9 @@ class DataPreparer:
                         batch_midi_features.append(None)
                         continue
                     else:            
-                        cache_path = os.path.join(cache_dir, f"{os.path.basename(batch_midi_paths[i])}.json")
+                        cache_path = None
+                        if not self.disable_cache and cache_dir:
+                            cache_path = os.path.join(cache_dir, f"{os.path.basename(batch_midi_paths[i])}.json")
                         try:
                             # Set a timeout for processing each MIDI file to avoid hanging
                             features = self.midi_processor.extract_features(midi_data, cache_path=cache_path)
@@ -452,12 +460,13 @@ class DataPreparer:
                             }
                             batch_midi_features.append(default_features)
                             
-                            # Cache the default features to avoid reprocessing
-                            try:
-                                with open(cache_path, 'w') as f:
-                                    json.dump(default_features, f)
-                            except Exception as cache_err:
-                                logger.warning(f"Error caching default features: {str(cache_err)}")
+                            # Cache the default features to avoid reprocessing if caching is enabled
+                            if not self.disable_cache and cache_path:
+                                try:
+                                    with open(cache_path, 'w') as f:
+                                        json.dump(default_features, f)
+                                except Exception as cache_err:
+                                    logger.warning(f"Error caching default features: {str(cache_err)}")
                 
                 # Process text features in batch (if possible)
                 batch_text_features = []
@@ -494,15 +503,16 @@ class DataPreparer:
                     
                     processed_data.append(processed_item)
                     
-                    # Cache processed item
-                    try:
-                        item_cache_path = os.path.join(cache_dir, f"{os.path.basename(midi_path)}_processed.json")
-                        with open(item_cache_path, 'w') as f:
-                            # Ensure all values are JSON serializable
-                            serializable_item = self._make_json_serializable(processed_item)
-                            json.dump(serializable_item, f)
-                    except Exception as e:
-                        logger.error(f"Error saving cache for {midi_path}: {str(e)}")
+                    # Cache processed item if caching is enabled
+                    if not self.disable_cache and cache_dir:
+                        try:
+                            item_cache_path = os.path.join(cache_dir, f"{os.path.basename(midi_path)}_processed.json")
+                            with open(item_cache_path, 'w') as f:
+                                # Ensure all values are JSON serializable
+                                serializable_item = self._make_json_serializable(processed_item)
+                                json.dump(serializable_item, f)
+                        except Exception as e:
+                            logger.warning(f"Error caching processed item: {str(e)}")
                 
             except Exception as e:
                 logger.error(f"Error processing batch: {str(e)}")

@@ -36,7 +36,9 @@ class MidiProcessor:
         pretrained_model_path: Optional[str] = None,
         use_hierarchical_encoding: bool = False,
         device: str = "cpu",
-        use_mixed_precision: bool = False
+        use_mixed_precision: bool = False,
+        use_cache: bool = True,
+        cache_dir: str = "data/processed/midi_cache"
     ):
         """Initialize MidiProcessor
         
@@ -47,6 +49,8 @@ class MidiProcessor:
             use_hierarchical_encoding: Whether to use hierarchical encoding
             device: Device to use (cpu, cuda)
             use_mixed_precision: Whether to use mixed precision (FP16) for faster processing
+            use_cache: Whether to use cache for processed MIDI files
+            cache_dir: Directory to store cached files
         """
         self.max_sequence_length = max_sequence_length
         self.use_pretrained_model = use_pretrained_model
@@ -54,6 +58,12 @@ class MidiProcessor:
         self.use_hierarchical_encoding = use_hierarchical_encoding
         self.device = device
         self.use_mixed_precision = use_mixed_precision and device == "cuda"
+        self.use_cache = use_cache
+        self.cache_dir = cache_dir
+        
+        # Create cache directory if needed
+        if self.use_cache and not os.path.exists(self.cache_dir):
+            os.makedirs(self.cache_dir, exist_ok=True)
         
         # Initialize vocabulary
         self.vocab_size = 128 + 128 + 100  # 128 note-on, 128 note-off, 100 time-shift

@@ -73,6 +73,11 @@ def main(args):
     if is_kaggle:
         logger.info("Kaggle environment detected!")
         logger.info("Running in Kaggle compatibility mode")
+        
+        # Automatically disable caching on Kaggle to save disk space
+        if not hasattr(args, 'disable_cache') or not args.disable_cache:
+            logger.info("Automatically disabling cache on Kaggle to save disk space")
+            args.disable_cache = True
     
     # Create output directory
     os.makedirs(args.output_dir, exist_ok=True)
@@ -99,7 +104,9 @@ def main(args):
         pretrained_model_path=args.pretrained_music_model_path if args.use_pretrained_music_model else None,
         use_hierarchical_encoding=args.use_hierarchical_encoding,
         device=args.device,
-        use_mixed_precision=args.use_mixed_precision
+        use_mixed_precision=args.use_mixed_precision,
+        use_cache=not args.disable_cache,
+        cache_dir=os.path.join(args.output_dir, "midi_cache")
     )
     
     # Initialize text processor
@@ -115,7 +122,8 @@ def main(args):
         text_processor=text_processor,
         feature_fusion_method=args.feature_fusion_method,
         output_dir=args.output_dir,
-        is_kaggle=is_kaggle
+        is_kaggle=is_kaggle,
+        disable_cache=args.disable_cache
     )
     
     # Process paired data
@@ -175,6 +183,8 @@ if __name__ == "__main__":
                         help="Batch size for processing paired data")
     parser.add_argument("--use-mixed-precision", action="store_true",
                         help="Use mixed precision (FP16) for faster processing on GPU")
+    parser.add_argument("--disable-cache", action="store_true",
+                        help="Disable caching of processed files to save disk space")
     
     args = parser.parse_args()
     main(args) 
