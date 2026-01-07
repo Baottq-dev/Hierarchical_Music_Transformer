@@ -1,24 +1,32 @@
 # Core dependencies
-numpy>=1.20.0
-torch>=1.10.0
+numpy>=1.20.0,<2.0.0  # Stay on numpy 1.x for scipy compatibility
+torch>=2.0.0
+scipy>=1.10.0
+
+# MIDI processing
+miditok>=3.0.0
 pretty_midi>=0.2.9
 mido>=1.2.10
-tqdm>=4.62.0
-click>=8.1.0
-pydantic>=1.9.0
+
+# Deep learning
+transformers>=4.35.0
+
+# Configuration
+hydra-core>=1.3.0
+omegaconf>=2.3.0
+pydantic>=2.0.0
 pydantic-settings>=2.0.0
 
-# For MIDI processing
-music21>=7.3.0
-
-# For text processing
-transformers>=4.27.0
-sentencepiece>=0.1.99
-spacy>=3.5.0
-scikit-learn>=1.0.2
-
-# Optional dependencies
+# Utilities
+tqdm>=4.62.0
 tensorboard>=2.8.0
+
+# Optional: Weights & Biases
+# wandb>=0.15.0
+
+# Optional: Mamba (requires CUDA)
+# causal-conv1d>=1.2.0
+# mamba-ssm>=1.2.0
 
 # Development dependencies
 black>=23.3.0
@@ -27,6 +35,3 @@ ruff>=0.0.262
 mypy>=1.3.0
 pytest>=7.3.1
 pytest-cov>=4.1.0
-
-# Install language model for spaCy
-# Run after installing this: python -m spacy download en_core_web_sm

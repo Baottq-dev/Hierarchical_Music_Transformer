@@ -3,12 +3,12 @@ requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "amt"
+name = "mamba-music"
 version = "0.1.0"
-description = "Automated Music Transcription with Transformer models"
+description = "Hybrid Mamba-Transformer for Symbolic Music Generation"
 readme = "README.md"
 authors = [
-    {name = "AMT Team"}
+    {name = "Mamba Music Team"}
 ]
 requires-python = ">=3.9"
 classifiers = [
@@ -18,16 +18,22 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
+    "Topic :: Multimedia :: Sound/Audio :: MIDI",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
     "numpy>=1.20.0",
-    "torch>=1.10.0",
+    "torch>=2.0.0",
+    "miditok>=3.0.0",
     "pretty_midi>=0.2.9",
     "mido>=1.2.10",
     "tqdm>=4.62.0",
     "tensorboard>=2.8.0",
-    "click>=8.1.0",
-    "pydantic>=1.9.0",
+    "hydra-core>=1.3.0",
+    "omegaconf>=2.3.0",
+    "scipy>=1.10.0",
+    "transformers>=4.35.0",
+    "pydantic>=2.0.0",
     "pydantic-settings>=2.0.0",
 ]
 
@@ -40,11 +46,19 @@ dev = [
     "pre-commit>=3.3.1",
     "pytest>=7.3.1",
     "pytest-cov>=4.1.0",
+    "jupyter>=1.0.0",
 ]
+mamba = [
+    "causal-conv1d>=1.2.0",
+    "mamba-ssm>=1.2.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["mamba_music", "mamba_music.*"]
 
 [tool.black]
 line-length = 100
-target-version = ["py39"]
+target-version = ["py39", "py310", "py311"]
 include = '\.pyi?$'
 exclude = '''
 /(
@@ -57,7 +71,7 @@ exclude = '''
   | buck-out
   | build
   | dist
-  | models/checkpoints
+  | experiments/checkpoints
 )/
 '''
 
@@ -70,7 +84,8 @@ force_grid_wrap = 0
 use_parentheses = true
 ensure_newline_before_comments = true
 skip_gitignore = true
-skip_glob = ["models/checkpoints/*"]
+skip_glob = ["experiments/checkpoints/*"]
+src_paths = ["src"]
 
 [tool.ruff]
 line-length = 100
@@ -81,7 +96,7 @@ exclude = [
     ".git",
     ".mypy_cache",
     ".venv",
-    "models/checkpoints",
+    "experiments/checkpoints",
 ]
 
 [tool.ruff.per-file-ignores]
@@ -91,16 +106,14 @@ exclude = [
 python_version = "3.9"
 warn_return_any = true
 warn_unused_configs = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
 check_untyped_defs = true
-disallow_untyped_decorators = true
 no_implicit_optional = true
 strict_optional = true
 warn_redundant_casts = true
 warn_unused_ignores = true
 warn_no_return = true
-warn_unreachable = true
 
 [[tool.mypy.overrides]]
 module = [
@@ -108,6 +121,10 @@ module = [
     "mido.*",
     "tqdm.*",
     "tensorboard.*",
+    "miditok.*",
+    "mamba_ssm.*",
+    "hydra.*",
+    "omegaconf.*",
 ]
 ignore_missing_imports = true
 
@@ -116,8 +133,4 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_functions = "test_*"
 python_classes = "Test*"
-addopts = "--cov=amt --cov-report=term-missing" 
-
-[project.scripts]
-amt = "amt.cli:cli"
-amt-simple = "amt.cli_simple:cli"
+addopts = "--cov=src/mamba_music --cov-report=term-missing"
