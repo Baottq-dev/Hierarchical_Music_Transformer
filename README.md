@@ -20,7 +20,7 @@ A PyTorch library for symbolic music generation using OctupleMIDI tokenization a
 
 ```bash
 # Clone repository
-git clone <repo-url>
+git clone [<repo-url>](https://github.com/Baottq-dev/Hierarchical_Music_Transformer.git)
 cd Hierarchical_Music_Transformer
 
 # Install package
