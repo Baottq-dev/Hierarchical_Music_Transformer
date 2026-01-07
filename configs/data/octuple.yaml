@@ -1,0 +1,20 @@
+# OctupleMIDI tokenizer configuration
+
+name: octuple
+pitch_range: [21, 108]
+nb_velocities: 32
+use_chords: true
+use_rests: true
+use_tempos: true
+use_time_signatures: true
+use_programs: false
+
+vocab_sizes:
+  time_sig: 16
+  tempo: 64
+  bar: 512
+  position: 128
+  instrument: 128
+  pitch: 128
+  duration: 128
+  velocity: 32

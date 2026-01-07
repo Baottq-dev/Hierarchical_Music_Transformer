@@ -1,0 +1,44 @@
+# Default training configuration
+
+defaults:
+  - _self_
+
+seed: 42
+experiment_name: ${now:%Y-%m-%d_%H-%M-%S}
+
+model:
+  name: transformer
+  d_model: 512
+  num_heads: 8
+  num_layers: 6
+  d_ff: 2048
+  max_seq_len: 2048
+  dropout: 0.1
+
+data:
+  tokenizer: octuple
+  max_seq_len: 2048
+  train_path: data/processed/train.json
+  val_path: data/processed/val.json
+  num_workers: 4
+
+training:
+  epochs: 100
+  batch_size: 32
+  learning_rate: 1.0e-4
+  weight_decay: 0.01
+  warmup_steps: 1000
+  gradient_clip: 1.0
+  gradient_accumulation_steps: 1
+  
+  fp16: false
+  bf16: true
+  
+  save_every_n_epochs: 5
+  eval_every_n_steps: 500
+  log_every_n_steps: 100
+
+paths:
+  output_dir: experiments/${experiment_name}
+  checkpoint_dir: ${paths.output_dir}/checkpoints
+  log_dir: ${paths.output_dir}/logs
