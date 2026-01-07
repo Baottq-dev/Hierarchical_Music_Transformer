@@ -36,13 +36,20 @@ ENV/
 # Jupyter Notebook
 .ipynb_checkpoints
 
-# Project specific
-data/midi/
-models/checkpoints/*
-!models/checkpoints/.gitkeep
+# Project specific - Data
+data/raw/*
 data/processed/*
-!data/processed/.gitkeep
-!data/output/.gitkeep
+data/external/*
+!data/*/.gitkeep
+
+# Project specific - Experiments
+experiments/logs/*
+experiments/checkpoints/*
+experiments/generated/*
+!experiments/*/.gitkeep
+
+# Legacy files (if any)
+*.bak
 
 # Mypy
 .mypy_cache/
@@ -54,6 +61,29 @@ htmlcov/
 # Pytest
 .pytest_cache/
 
+# Ruff
+.ruff_cache/
+
 # Logs
 logs/
-*.log 
+*.log
+
+# Docker
+docker-compose.override.yml
+
+# Environment
+.env
+.env.local
+
+# Hydra outputs
+outputs/
+multirun/
+
+# Weights & Biases
+wandb/
+
+# Model files
+*.pt
+*.pth
+*.ckpt
+*.safetensors
