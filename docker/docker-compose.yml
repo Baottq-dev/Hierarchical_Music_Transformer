@@ -1,0 +1,60 @@
+version: "3.8"
+
+services:
+  mamba-music:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: mamba-music:latest
+    container_name: mamba-music
+    
+    # GPU support
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    
+    # Mount volumes
+    volumes:
+      - ..:/app
+      - ../data:/app/data
+      - ../experiments:/app/experiments
+    
+    # Environment
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - WANDB_API_KEY=${WANDB_API_KEY:-}
+    
+    # Keep container running
+    stdin_open: true
+    tty: true
+    
+    # Working directory
+    working_dir: /app
+
+  # Jupyter Lab service (optional)
+  jupyter:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: mamba-music:latest
+    container_name: mamba-music-jupyter
+    
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    
+    volumes:
+      - ..:/app
+    
+    ports:
+      - "8888:8888"
+    
+    command: jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root
